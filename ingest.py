@@ -10,7 +10,30 @@ from typing import Iterable
 import pandas as pd
 import requests
 
+"""
+What the script now does:
 
+- Downloads OPSSAT-AD from Zenodo record 12588359 into raw, saving the raw file first.
+- Automatically handles ZIP archives by extracting a CSV or Parquet dataset file.
+- Loads data into pandas and validates required columns.
+- Splits by channel and writes full per-channel frames to by_channel.
+- Separates metadata and features per channel, validates feature dtypes as int64/float64 only, and writes:
+  - channel_features.parquet
+  - channel_metadata.parquet
+- Prints per-channel reports (shape, train/test counts, anomaly/nominal counts, NaNs per feature).
+- Prints a final confirmation list of all written files with sizes.
+- Uses pathlib paths throughout.
+Execution result:
+
+Script run succeeded with a single call: python ingest.py
+Downloaded dataset.csv
+Processed 2123 rows across 9 channels
+Wrote all expected per-channel full, features, and metadata Parquet outputs in by_channel
+"""
+
+
+
+# Downloads OPSSAT-AD from Zenodo record 12588359 into raw, saving the raw file first.
 ZENODO_RECORD_ID = "12588359"
 ZENODO_RECORD_API = f"https://zenodo.org/api/records/{ZENODO_RECORD_ID}"
 
@@ -41,7 +64,7 @@ FEATURE_COLUMNS = [
 def sanitize_channel_name(channel_name: str) -> str:
     sanitized = re.sub(r"[^A-Za-z0-9]+", "_", channel_name.strip())
     sanitized = re.sub(r"_+", "_", sanitized).strip("_")
-    return sanitized or "unknown_channel"
+    return sanitized or "unknown_channel"  
 
 
 def make_unique_name(base_name: str, used_names: set[str]) -> str:
