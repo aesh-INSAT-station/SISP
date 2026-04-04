@@ -309,6 +309,54 @@ def print_written_files_confirmation(base_dir: Path, files: list[Path]) -> None:
         print(f"  - {relative_path} ({size})")
 
 
+def write_one_channel_csv_samples(
+    by_channel_dir: Path,
+    channel_safe_name: str,
+    written_files: list[Path],
+    sample_size: int = 5,
+    random_state: int = 42,
+) -> None:
+    default_parquet = by_channel_dir / f"{channel_safe_name}.parquet"
+    features_parquet = by_channel_dir / f"{channel_safe_name}_features.parquet"
+    metadata_parquet = by_channel_dir / f"{channel_safe_name}_metadata.parquet"
+
+    default_df = pd.read_parquet(default_parquet, engine="pyarrow")
+    features_df = pd.read_parquet(features_parquet, engine="pyarrow")
+    metadata_df = pd.read_parquet(metadata_parquet, engine="pyarrow")
+
+    if not (len(default_df) == len(features_df) == len(metadata_df)):
+        raise AssertionError(
+            "Cannot sample aligned rows: default/features/metadata lengths differ."
+        )
+
+    if len(default_df) == 0:
+        raise RuntimeError("Cannot sample rows from an empty channel DataFrame.")
+
+    n_rows = min(sample_size, len(default_df))
+    sampled_positions = default_df.sample(n=n_rows, random_state=random_state).index
+
+    default_sample_df = default_df.loc[sampled_positions].reset_index(drop=True)
+    features_sample_df = features_df.loc[sampled_positions].reset_index(drop=True)
+    metadata_sample_df = metadata_df.loc[sampled_positions].reset_index(drop=True)
+
+    default_csv = by_channel_dir / f"{channel_safe_name}_sample_default.csv"
+    features_csv = by_channel_dir / f"{channel_safe_name}_sample_features.csv"
+    metadata_csv = by_channel_dir / f"{channel_safe_name}_sample_metadata.csv"
+
+    default_sample_df.to_csv(default_csv, index=False)
+    features_sample_df.to_csv(features_csv, index=False)
+    metadata_sample_df.to_csv(metadata_csv, index=False)
+
+    written_files.append(default_csv)
+    written_files.append(features_csv)
+    written_files.append(metadata_csv)
+
+    print(
+        "\nSample CSVs written for one channel example "
+        f"('{channel_safe_name}', rows={n_rows})."
+    )
+
+
 def main() -> None:
     project_root = Path(__file__).resolve().parent
     raw_dir = project_root / "data" / "raw"
@@ -376,6 +424,17 @@ def main() -> None:
 
         written_files.append(features_path)
         written_files.append(metadata_path)
+    
+    # print a sample for testing
+    if channel_file_map:
+        example_channel_safe_name = next(iter(channel_file_map.values()))
+        write_one_channel_csv_samples(
+            by_channel_dir=by_channel_dir,
+            channel_safe_name=example_channel_safe_name,
+            written_files=written_files,
+            sample_size=5,
+            random_state=42,
+        )
 
     print_written_files_confirmation(base_dir=project_root, files=written_files)
     print("\nIngestion and preprocessing (steps 0-2) completed successfully.")
