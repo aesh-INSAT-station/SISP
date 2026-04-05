@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import joblib
@@ -10,6 +11,10 @@ from sklearn.preprocessing import StandardScaler
 FEATURE_FILE_SUFFIX = "_features.parquet"
 METADATA_COLUMNS = ["segment", "anomaly", "train", "channel"]
 EXCLUDED_CHANNELS = {"CADC0886", "CADC0890"}
+ZERO_VARIANCE_STD_EPS = 1e-8
+BINARY_EQUALITY_EPS = 1e-8
+WINSOR_LOWER_Q = 0.01
+WINSOR_UPPER_Q = 0.99
 
 
 def human_readable_size(num_bytes: int) -> str:
@@ -172,21 +177,142 @@ def print_step3_post_imputation(
     print(f"Remaining clean train=True AND anomaly=0 rows: {fitting_row_count}")
 
 
-def print_scaling_validation(
+def write_json_file(path: Path, payload: object) -> None:
+    with path.open("w", encoding="utf-8") as file_handle:
+        json.dump(payload, file_handle, indent=2)
+
+
+def read_json_string_list(path: Path) -> list[str]:
+    with path.open("r", encoding="utf-8") as file_handle:
+        payload = json.load(file_handle)
+    if not isinstance(payload, list) or any(not isinstance(item, str) for item in payload):
+        raise RuntimeError(f"Invalid JSON list payload in {path}.")
+    return payload
+
+
+def apply_zero_variance_binary_transform(
     channel_name: str,
-    scaled_df: pd.DataFrame,
+    features_df: pd.DataFrame,
+    fitting_mask: pd.Series,
+) -> tuple[pd.DataFrame, list[str], dict[str, float], dict[str, int]]:
+    fitting_df = features_df.loc[fitting_mask]
+    if fitting_df.empty:
+        raise RuntimeError(
+            f"Channel '{channel_name}' has zero fitting rows for zero-variance checks."
+        )
+
+    fitting_std = fitting_df.std(ddof=0)
+    binary_columns = fitting_std.index[fitting_std <= ZERO_VARIANCE_STD_EPS].tolist()
+
+    transformed_df = features_df.copy()
+    constant_values: dict[str, float] = {}
+    non_zero_counts: dict[str, int] = {}
+
+    for column in binary_columns:
+        constant_value = float(fitting_df[column].iloc[0])
+        constant_values[column] = constant_value
+
+        equal_mask = (transformed_df[column] - constant_value).abs() <= BINARY_EQUALITY_EPS
+        binary_series = (~equal_mask).astype("int64")
+        transformed_df[column] = binary_series
+        non_zero_counts[column] = int(binary_series.sum())
+
+    return transformed_df, binary_columns, constant_values, non_zero_counts
+
+
+def print_binary_transform_report(
+    channel_name: str,
+    binary_columns: list[str],
+    constant_values: dict[str, float],
+    non_zero_counts: dict[str, int],
+) -> None:
+    print(f"Step 3.1 zero-variance handling for channel '{channel_name}'")
+    if not binary_columns:
+        print(f"{channel_name}: no zero-variance features needed binary transformation.")
+        return
+
+    constants_text = ", ".join(f"{constant_values[column]:.6g}" for column in binary_columns)
+    print(
+        f"{channel_name}: binary-transformed zero-variance features: {binary_columns} "
+        f"(constant={constants_text})"
+    )
+    for column in binary_columns:
+        print(
+            f"  - {column}: non-zero rows across all train/test rows = "
+            f"{non_zero_counts[column]}"
+        )
+
+
+def winsorize_non_binary_features(
+    features_df: pd.DataFrame,
+    fitting_mask: pd.Series,
+    binary_columns: list[str],
+) -> tuple[pd.DataFrame, dict[str, int]]:
+    binary_set = set(binary_columns)
+    non_binary_columns = [column for column in features_df.columns if column not in binary_set]
+
+    winsorized_df = features_df.copy()
+    clipped_counts: dict[str, int] = {}
+
+    if not non_binary_columns:
+        return winsorized_df, clipped_counts
+
+    fitting_df = features_df.loc[fitting_mask, non_binary_columns]
+    for column in non_binary_columns:
+        p01 = float(fitting_df[column].quantile(WINSOR_LOWER_Q, interpolation="linear"))
+        p99 = float(fitting_df[column].quantile(WINSOR_UPPER_Q, interpolation="linear"))
+        if p01 > p99:
+            p01, p99 = p99, p01
+
+        column_values = winsorized_df[column]
+        lower_hits = int((column_values < p01).sum())
+        upper_hits = int((column_values > p99).sum())
+        total_clipped = lower_hits + upper_hits
+        if total_clipped > 0:
+            clipped_counts[column] = total_clipped
+
+        winsorized_df[column] = column_values.clip(lower=p01, upper=p99)
+
+    return winsorized_df, clipped_counts
+
+
+def print_winsorization_report(channel_name: str, clipped_counts: dict[str, int]) -> None:
+    print(f"Step 3.2 winsorization for channel '{channel_name}'")
+    if not clipped_counts:
+        print("No non-binary feature values were clipped.")
+        return
+
+    print("Columns with clipped values (total clipped count):")
+    for column, count in clipped_counts.items():
+        print(f"  - {column}: {count}")
+
+
+def print_continuous_scaling_validation(
+    channel_name: str,
+    scaled_continuous_df: pd.DataFrame,
     fitting_mask: pd.Series,
     test_mask: pd.Series,
 ) -> None:
-    fit_mean = scaled_df.loc[fitting_mask].mean()
-    fit_std = scaled_df.loc[fitting_mask].std(ddof=0)
+    print(f"\nStep 4 validation for channel '{channel_name}' (continuous features)")
+    if scaled_continuous_df.shape[1] == 0:
+        print("No continuous features available for scaling validation.")
+        return
+
+    fit_mean = scaled_continuous_df.loc[fitting_mask].mean()
+    fit_std = scaled_continuous_df.loc[fitting_mask].std(ddof=0)
 
     if int(test_mask.sum()) > 0:
-        test_mean = scaled_df.loc[test_mask].mean()
-        test_std = scaled_df.loc[test_mask].std(ddof=0)
+        test_mean = scaled_continuous_df.loc[test_mask].mean()
+        test_std = scaled_continuous_df.loc[test_mask].std(ddof=0)
     else:
-        test_mean = pd.Series([float("nan")] * scaled_df.shape[1], index=scaled_df.columns)
-        test_std = pd.Series([float("nan")] * scaled_df.shape[1], index=scaled_df.columns)
+        test_mean = pd.Series(
+            [float("nan")] * scaled_continuous_df.shape[1],
+            index=scaled_continuous_df.columns,
+        )
+        test_std = pd.Series(
+            [float("nan")] * scaled_continuous_df.shape[1],
+            index=scaled_continuous_df.columns,
+        )
 
     validation_df = pd.DataFrame(
         {
@@ -196,30 +322,34 @@ def print_scaling_validation(
             "test_std": test_std,
         }
     )
-
-    print(f"\nStep 4 validation for channel '{channel_name}'")
     print(validation_df.to_string(float_format=lambda value: f"{value: .6f}"))
 
     mean_shift_features = validation_df.index[validation_df["test_mean"].abs() > 3.0].tolist()
-    std_shift_features = validation_df.index[
-        (validation_df["test_std"] - 1.0).abs() > 2.0
-    ].tolist()
-
     if mean_shift_features:
         print(
-            "Potential distribution shift (|test_mean| > 3.0): "
+            "WARNING: continuous features with |test_mean| > 3.0: "
             + ", ".join(mean_shift_features)
         )
     else:
-        print("No feature exceeded the |test_mean| > 3.0 shift threshold.")
+        print("No continuous feature exceeded |test_mean| > 3.0.")
 
-    if std_shift_features:
-        print(
-            "Potential scale shift (|test_std - 1.0| > 2.0): "
-            + ", ".join(std_shift_features)
-        )
-    else:
-        print("No feature exceeded the |test_std - 1.0| > 2.0 shift threshold.")
+
+def print_binary_test_value_counts(
+    channel_name: str,
+    scaled_df: pd.DataFrame,
+    binary_columns: list[str],
+    test_mask: pd.Series,
+) -> None:
+    print(f"Step 4 binary feature test counts for channel '{channel_name}'")
+    if not binary_columns:
+        print("No binary-transformed features for this channel.")
+        return
+
+    test_binary_df = scaled_df.loc[test_mask, binary_columns]
+    for column in binary_columns:
+        value_ones = int((test_binary_df[column] == 1).sum())
+        value_zeros = int((test_binary_df[column] == 0).sum())
+        print(f"  - {column}: value=1 -> {value_ones}, value=0 -> {value_zeros}")
 
 
 def print_written_files_summary(project_root: Path, files: list[Path]) -> None:
@@ -284,7 +414,9 @@ def main() -> None:
     project_root = Path(__file__).resolve().parent
     by_channel_dir = project_root / "data" / "interim" / "by_channel"
     scalers_dir = project_root / "data" / "interim" / "scalers"
+    svd_dir = project_root / "data" / "interim" / "svd"
     scalers_dir.mkdir(parents=True, exist_ok=True)
+    svd_dir.mkdir(parents=True, exist_ok=True)
 
     feature_files = sorted(by_channel_dir.glob(f"*{FEATURE_FILE_SUFFIX}"))
     if not feature_files:
@@ -315,7 +447,7 @@ def main() -> None:
 
     written_files: list[Path] = []
 
-    # Step 3: missing value handling.
+    # Step 3: missing value handling + binary transform + winsorization.
     for channel_name in channel_names:
         feature_path = by_channel_dir / f"{channel_name}_features.parquet"
         metadata_path = by_channel_dir / f"{channel_name}_metadata.parquet"
@@ -344,7 +476,7 @@ def main() -> None:
 
         fitting_mask = get_fitting_mask(metadata_kept)
 
-        features_clean, imputed_count = impute_channel_features(
+        features_imputed, imputed_count = impute_channel_features(
             channel_name,
             features_kept,
             fitting_mask,
@@ -357,26 +489,89 @@ def main() -> None:
             fitting_row_count,
         )
 
+        (
+            features_clean,
+            binary_columns,
+            constant_values,
+            non_zero_counts,
+        ) = apply_zero_variance_binary_transform(
+            channel_name,
+            features_imputed,
+            fitting_mask,
+        )
+        print_binary_transform_report(
+            channel_name,
+            binary_columns,
+            constant_values,
+            non_zero_counts,
+        )
+
         assert_row_alignment(features_clean, metadata_kept, channel_name, "step3-before-save")
 
         clean_feature_path = by_channel_dir / f"{channel_name}_features_clean.parquet"
         clean_metadata_path = by_channel_dir / f"{channel_name}_metadata_clean.parquet"
+        winsorized_feature_path = by_channel_dir / f"{channel_name}_features_winsorized.parquet"
+
+        feature_names_path = svd_dir / f"{channel_name}_feature_names.json"
+        binary_features_path = svd_dir / f"{channel_name}_binary_features.json"
+
+        write_json_file(feature_names_path, features_clean.columns.tolist())
+        write_json_file(binary_features_path, binary_columns)
 
         features_clean.to_parquet(clean_feature_path, index=False, engine="pyarrow")
         metadata_kept.to_parquet(clean_metadata_path, index=False, engine="pyarrow")
 
+        winsorized_df, clipped_counts = winsorize_non_binary_features(
+            features_clean,
+            fitting_mask,
+            binary_columns,
+        )
+        print_winsorization_report(channel_name, clipped_counts)
+        winsorized_df.to_parquet(winsorized_feature_path, index=False, engine="pyarrow")
+
         written_files.append(clean_feature_path)
         written_files.append(clean_metadata_path)
+        written_files.append(winsorized_feature_path)
+        written_files.append(feature_names_path)
+        written_files.append(binary_features_path)
 
-    # Step 4: standardization from clean files.
+    # Step 4: standardization from winsorized features (continuous only).
     for channel_name in channel_names:
-        clean_feature_path = by_channel_dir / f"{channel_name}_features_clean.parquet"
+        winsorized_feature_path = by_channel_dir / f"{channel_name}_features_winsorized.parquet"
         clean_metadata_path = by_channel_dir / f"{channel_name}_metadata_clean.parquet"
+        feature_names_path = svd_dir / f"{channel_name}_feature_names.json"
+        binary_features_path = svd_dir / f"{channel_name}_binary_features.json"
 
-        features_clean = pd.read_parquet(clean_feature_path, engine="pyarrow")
+        features_winsorized = pd.read_parquet(winsorized_feature_path, engine="pyarrow")
         metadata_clean = pd.read_parquet(clean_metadata_path, engine="pyarrow")
 
-        assert_row_alignment(features_clean, metadata_clean, channel_name, "step4-load")
+        assert_row_alignment(features_winsorized, metadata_clean, channel_name, "step4-load")
+
+        expected_feature_names = read_json_string_list(feature_names_path)
+        if features_winsorized.columns.tolist() != expected_feature_names:
+            raise AssertionError(
+                f"Feature order mismatch for channel '{channel_name}' between winsorized data "
+                f"and {feature_names_path.name}."
+            )
+
+        binary_columns = read_json_string_list(binary_features_path)
+        missing_binary_columns = [
+            column for column in binary_columns if column not in features_winsorized.columns
+        ]
+        if missing_binary_columns:
+            raise KeyError(
+                f"Channel '{channel_name}' has missing binary feature columns: "
+                f"{missing_binary_columns}"
+            )
+
+        feature_columns = features_winsorized.columns.tolist()
+        binary_set = set(binary_columns)
+        continuous_columns = [column for column in feature_columns if column not in binary_set]
+        if not continuous_columns:
+            raise RuntimeError(
+                f"Channel '{channel_name}' has no continuous features to scale after binary "
+                "transformation."
+            )
 
         fitting_mask = get_fitting_mask(metadata_clean)
         fitting_row_count = int(fitting_mask.sum())
@@ -388,13 +583,21 @@ def main() -> None:
         test_mask = get_test_mask(metadata_clean)
 
         scaler = StandardScaler()
-        scaler.fit(features_clean.loc[fitting_mask])
-        scaled_array = scaler.transform(features_clean)
-        scaled_df = pd.DataFrame(
-            scaled_array,
-            columns=features_clean.columns,
-            index=features_clean.index,
+        scaler.fit(features_winsorized.loc[fitting_mask, continuous_columns])
+        scaled_continuous_array = scaler.transform(features_winsorized[continuous_columns])
+        scaled_continuous_df = pd.DataFrame(
+            scaled_continuous_array,
+            columns=continuous_columns,
+            index=features_winsorized.index,
         )
+
+        combined_columns: dict[str, pd.Series] = {}
+        for column in feature_columns:
+            if column in binary_set:
+                combined_columns[column] = features_winsorized[column]
+            else:
+                combined_columns[column] = scaled_continuous_df[column]
+        scaled_df = pd.DataFrame(combined_columns, index=features_winsorized.index)
 
         assert_row_alignment(scaled_df, metadata_clean, channel_name, "step4-before-save")
 
@@ -407,7 +610,13 @@ def main() -> None:
         written_files.append(scaled_feature_path)
         written_files.append(scaler_path)
 
-        print_scaling_validation(channel_name, scaled_df, fitting_mask, test_mask)
+        print_continuous_scaling_validation(
+            channel_name,
+            scaled_df[continuous_columns],
+            fitting_mask,
+            test_mask,
+        )
+        print_binary_test_value_counts(channel_name, scaled_df, binary_columns, test_mask)
 
     # Create one scaled sample after scaling is complete.
     sample_channel = channel_names[0]
