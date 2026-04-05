@@ -11,7 +11,7 @@ import pandas as pd
 import requests
 
 """
-What the script now does:
+What the script does:
 
 - Downloads OPSSAT-AD from Zenodo record 12588359 into raw, saving the raw file first.
 - Automatically handles ZIP archives by extracting a CSV or Parquet dataset file.
