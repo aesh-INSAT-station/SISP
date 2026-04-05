@@ -9,6 +9,7 @@ from sklearn.preprocessing import StandardScaler
 
 FEATURE_FILE_SUFFIX = "_features.parquet"
 METADATA_COLUMNS = ["segment", "anomaly", "train", "channel"]
+EXCLUDED_CHANNELS = {"CADC0886", "CADC0890"}
 
 
 def human_readable_size(num_bytes: int) -> str:
@@ -26,9 +27,11 @@ def channel_from_feature_file(feature_path: Path) -> str:
     return feature_path.name[: -len(FEATURE_FILE_SUFFIX)]
 
 
-def normalize_train_flag(series: pd.Series) -> pd.Series:
-    true_tokens = {"1", "true", "t", "yes", "y", "train"}
-    false_tokens = {"0", "false", "f", "no", "n", "test"}
+def normalize_binary_series(
+    series: pd.Series,
+    true_tokens: set[str],
+    false_tokens: set[str],
+) -> pd.Series:
 
     def convert(value: object) -> object:
         if pd.isna(value):
@@ -48,6 +51,33 @@ def normalize_train_flag(series: pd.Series) -> pd.Series:
         return pd.NA
 
     return series.map(convert).astype("boolean")
+
+
+def normalize_train_flag(series: pd.Series) -> pd.Series:
+    return normalize_binary_series(
+        series,
+        true_tokens={"1", "true", "t", "yes", "y", "train"},
+        false_tokens={"0", "false", "f", "no", "n", "test"},
+    )
+
+
+def normalize_anomaly_flag(series: pd.Series) -> pd.Series:
+    return normalize_binary_series(
+        series,
+        true_tokens={"1", "true", "t", "yes", "y", "anomaly", "anomalous"},
+        false_tokens={"0", "false", "f", "no", "n", "nominal", "normal"},
+    )
+
+
+def get_fitting_mask(metadata_df: pd.DataFrame) -> pd.Series:
+    train_flag = normalize_train_flag(metadata_df["train"])
+    anomaly_flag = normalize_anomaly_flag(metadata_df["anomaly"])
+    return ((train_flag == True) & (anomaly_flag == False)).fillna(False).astype(bool)
+
+
+def get_test_mask(metadata_df: pd.DataFrame) -> pd.Series:
+    train_flag = normalize_train_flag(metadata_df["train"])
+    return (train_flag == False).fillna(False).astype(bool)
 
 
 def assert_row_alignment(
@@ -89,21 +119,21 @@ def print_missing_value_audit(channel_name: str, features_df: pd.DataFrame) -> N
 def impute_channel_features(
     channel_name: str,
     features_df: pd.DataFrame,
-    metadata_df: pd.DataFrame,
-) -> pd.DataFrame:
-    train_flag = normalize_train_flag(metadata_df["train"])
-    train_mask = train_flag == True
-
-    if int(train_mask.sum()) == 0:
+    fitting_mask: pd.Series,
+) -> tuple[pd.DataFrame, int]:
+    fitting_row_count = int(fitting_mask.sum())
+    if fitting_row_count == 0:
         raise RuntimeError(
-            f"Channel '{channel_name}' has zero train rows after filtering; "
-            "cannot compute train-based medians."
+            f"Channel '{channel_name}' has zero fitting rows where "
+            "train=True AND anomaly=0."
         )
+
+    values_to_impute = int(features_df.isna().sum().sum())
 
     medians: dict[str, float] = {}
     for column in features_df.columns:
-        train_median = features_df.loc[train_mask, column].median(skipna=True)
-        if pd.isna(train_median):
+        fitting_median = features_df.loc[fitting_mask, column].median(skipna=True)
+        if pd.isna(fitting_median):
             overall_median = features_df[column].median(skipna=True)
             if pd.isna(overall_median):
                 raise RuntimeError(
@@ -112,11 +142,11 @@ def impute_channel_features(
                 )
             medians[column] = float(overall_median)
             print(
-                f"WARNING: channel '{channel_name}', column '{column}' train median "
+                f"WARNING: channel '{channel_name}', column '{column}' fitting median "
                 "is NaN; using overall median fallback."
             )
         else:
-            medians[column] = float(train_median)
+            medians[column] = float(fitting_median)
 
     imputed_df = features_df.fillna(value=medians)
     remaining_nans = int(imputed_df.isna().sum().sum())
@@ -127,16 +157,29 @@ def impute_channel_features(
             f"NaN imputation failed for channel '{channel_name}'. Remaining NaNs: "
             f"{remaining_per_col}"
         )
-    return imputed_df
+    return imputed_df, values_to_impute
 
 
-def print_scaling_validation(channel_name: str, scaled_df: pd.DataFrame, metadata_df: pd.DataFrame) -> None:
-    train_flag = normalize_train_flag(metadata_df["train"])
-    train_mask = train_flag == True
-    test_mask = train_flag == False
+def print_step3_post_imputation(
+    channel_name: str,
+    dropped_count: int,
+    imputed_count: int,
+    fitting_row_count: int,
+) -> None:
+    print(f"Step 3 post-imputation for channel '{channel_name}'")
+    print(f"Rows dropped (>30% NaN features): {dropped_count}")
+    print(f"Values imputed: {imputed_count}")
+    print(f"Remaining clean train=True AND anomaly=0 rows: {fitting_row_count}")
 
-    train_mean = scaled_df.loc[train_mask].mean()
-    train_std = scaled_df.loc[train_mask].std(ddof=0)
+
+def print_scaling_validation(
+    channel_name: str,
+    scaled_df: pd.DataFrame,
+    fitting_mask: pd.Series,
+    test_mask: pd.Series,
+) -> None:
+    fit_mean = scaled_df.loc[fitting_mask].mean()
+    fit_std = scaled_df.loc[fitting_mask].std(ddof=0)
 
     if int(test_mask.sum()) > 0:
         test_mean = scaled_df.loc[test_mask].mean()
@@ -147,8 +190,8 @@ def print_scaling_validation(channel_name: str, scaled_df: pd.DataFrame, metadat
 
     validation_df = pd.DataFrame(
         {
-            "train_mean": train_mean,
-            "train_std": train_std,
+            "fit_mean": fit_mean,
+            "fit_std": fit_std,
             "test_mean": test_mean,
             "test_std": test_std,
         }
@@ -157,14 +200,26 @@ def print_scaling_validation(channel_name: str, scaled_df: pd.DataFrame, metadat
     print(f"\nStep 4 validation for channel '{channel_name}'")
     print(validation_df.to_string(float_format=lambda value: f"{value: .6f}"))
 
-    shifted_features = validation_df.index[validation_df["test_mean"].abs() > 3.0].tolist()
-    if shifted_features:
+    mean_shift_features = validation_df.index[validation_df["test_mean"].abs() > 3.0].tolist()
+    std_shift_features = validation_df.index[
+        (validation_df["test_std"] - 1.0).abs() > 2.0
+    ].tolist()
+
+    if mean_shift_features:
         print(
             "Potential distribution shift (|test_mean| > 3.0): "
-            + ", ".join(shifted_features)
+            + ", ".join(mean_shift_features)
         )
     else:
         print("No feature exceeded the |test_mean| > 3.0 shift threshold.")
+
+    if std_shift_features:
+        print(
+            "Potential scale shift (|test_std - 1.0| > 2.0): "
+            + ", ".join(std_shift_features)
+        )
+    else:
+        print("No feature exceeded the |test_std - 1.0| > 2.0 shift threshold.")
 
 
 def print_written_files_summary(project_root: Path, files: list[Path]) -> None:
@@ -192,8 +247,25 @@ def main() -> None:
             f"*{FEATURE_FILE_SUFFIX}"
         )
 
-    channel_names = [channel_from_feature_file(path) for path in feature_files]
-    print(f"Discovered {len(channel_names)} channels: {channel_names}")
+    discovered_channels = [channel_from_feature_file(path) for path in feature_files]
+    print(f"Discovered {len(discovered_channels)} channels: {discovered_channels}")
+
+    channel_names = [
+        channel_name
+        for channel_name in discovered_channels
+        if channel_name not in EXCLUDED_CHANNELS
+    ]
+    excluded_detected = [
+        channel_name
+        for channel_name in discovered_channels
+        if channel_name in EXCLUDED_CHANNELS
+    ]
+    for channel_name in excluded_detected:
+        print(f"Skipping excluded channel: {channel_name}")
+
+    if not channel_names:
+        raise RuntimeError("No channels left to process after exclusion filtering.")
+    print(f"Channels selected for processing ({len(channel_names)}): {channel_names}")
 
     written_files: list[Path] = []
 
@@ -219,13 +291,26 @@ def main() -> None:
         nan_fraction_per_row = features_df.isna().mean(axis=1)
         keep_mask = nan_fraction_per_row <= 0.30
         dropped_count = int((~keep_mask).sum())
-        print(f"Rows dropped (>30% NaN features): {dropped_count}")
 
         features_kept = features_df.loc[keep_mask].reset_index(drop=True)
         metadata_kept = metadata_df.loc[keep_mask].reset_index(drop=True)
         assert_row_alignment(features_kept, metadata_kept, channel_name, "step3-after-drop")
 
-        features_clean = impute_channel_features(channel_name, features_kept, metadata_kept)
+        fitting_mask = get_fitting_mask(metadata_kept)
+
+        features_clean, imputed_count = impute_channel_features(
+            channel_name,
+            features_kept,
+            fitting_mask,
+        )
+        fitting_row_count = int(fitting_mask.sum())
+        print_step3_post_imputation(
+            channel_name,
+            dropped_count,
+            imputed_count,
+            fitting_row_count,
+        )
+
         assert_row_alignment(features_clean, metadata_kept, channel_name, "step3-before-save")
 
         clean_feature_path = by_channel_dir / f"{channel_name}_features_clean.parquet"
@@ -247,16 +332,17 @@ def main() -> None:
 
         assert_row_alignment(features_clean, metadata_clean, channel_name, "step4-load")
 
-        train_flag = normalize_train_flag(metadata_clean["train"])
-        train_mask = train_flag == True
-        if int(train_mask.sum()) == 0:
+        fitting_mask = get_fitting_mask(metadata_clean)
+        fitting_row_count = int(fitting_mask.sum())
+        if fitting_row_count == 0:
             raise RuntimeError(
-                f"Channel '{channel_name}' has zero train rows in clean metadata; "
+                f"Channel '{channel_name}' has zero fitting rows in clean metadata; "
                 "cannot fit StandardScaler."
             )
+        test_mask = get_test_mask(metadata_clean)
 
         scaler = StandardScaler()
-        scaler.fit(features_clean.loc[train_mask])
+        scaler.fit(features_clean.loc[fitting_mask])
         scaled_array = scaler.transform(features_clean)
         scaled_df = pd.DataFrame(
             scaled_array,
@@ -275,7 +361,7 @@ def main() -> None:
         written_files.append(scaled_feature_path)
         written_files.append(scaler_path)
 
-        print_scaling_validation(channel_name, scaled_df, metadata_clean)
+        print_scaling_validation(channel_name, scaled_df, fitting_mask, test_mask)
 
     print_written_files_summary(project_root, written_files)
     print("\nPreprocessing (steps 3-4) completed successfully.")
