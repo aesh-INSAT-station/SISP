@@ -234,37 +234,37 @@ def print_written_files_summary(project_root: Path, files: list[Path]) -> None:
         print(f"  - {relative_path} ({human_readable_size(path.stat().st_size)})")
 
 
-def write_clean_channel_csv_samples(
+def write_scaled_channel_csv_samples(
     by_channel_dir: Path,
     channel_name: str,
     written_files: list[Path],
     sample_size: int = 5,
     random_state: int = 42,
 ) -> None:
-    clean_feature_path = by_channel_dir / f"{channel_name}_features_clean.parquet"
+    scaled_feature_path = by_channel_dir / f"{channel_name}_features_scaled.parquet"
     clean_metadata_path = by_channel_dir / f"{channel_name}_metadata_clean.parquet"
 
-    features_clean = pd.read_parquet(clean_feature_path, engine="pyarrow")
+    features_scaled = pd.read_parquet(scaled_feature_path, engine="pyarrow")
     metadata_clean = pd.read_parquet(clean_metadata_path, engine="pyarrow")
-    assert_row_alignment(features_clean, metadata_clean, channel_name, "clean-sample-load")
+    assert_row_alignment(features_scaled, metadata_clean, channel_name, "scaled-sample-load")
 
-    if len(features_clean) == 0:
+    if len(features_scaled) == 0:
         raise RuntimeError(
-            f"Cannot create clean sample CSVs for channel '{channel_name}' because there are no rows."
+            f"Cannot create scaled sample CSVs for channel '{channel_name}' because there are no rows."
         )
 
-    n_rows = min(sample_size, len(features_clean))
-    sampled_index = features_clean.sample(n=n_rows, random_state=random_state).index
+    n_rows = min(sample_size, len(features_scaled))
+    sampled_index = features_scaled.sample(n=n_rows, random_state=random_state).index
 
-    sample_features = features_clean.loc[sampled_index].reset_index(drop=True)
+    sample_features = features_scaled.loc[sampled_index].reset_index(drop=True)
     sample_metadata = metadata_clean.loc[sampled_index].reset_index(drop=True)
-    assert_row_alignment(sample_features, sample_metadata, channel_name, "clean-sample-selected")
+    assert_row_alignment(sample_features, sample_metadata, channel_name, "scaled-sample-selected")
 
     sample_default = pd.concat([sample_metadata, sample_features], axis=1)
 
-    sample_default_path = by_channel_dir / f"{channel_name}_sample_clean_default.csv"
-    sample_features_path = by_channel_dir / f"{channel_name}_sample_clean_features.csv"
-    sample_metadata_path = by_channel_dir / f"{channel_name}_sample_clean_metadata.csv"
+    sample_default_path = by_channel_dir / f"{channel_name}_sample_scaled_default.csv"
+    sample_features_path = by_channel_dir / f"{channel_name}_sample_scaled_features.csv"
+    sample_metadata_path = by_channel_dir / f"{channel_name}_sample_scaled_metadata.csv"
 
     sample_default.to_csv(sample_default_path, index=False)
     sample_features.to_csv(sample_features_path, index=False)
@@ -275,7 +275,7 @@ def write_clean_channel_csv_samples(
     written_files.append(sample_metadata_path)
 
     print(
-        f"\nClean sample CSVs written for channel '{channel_name}' "
+        f"\nScaled sample CSVs written for channel '{channel_name}' "
         f"(rows={n_rows})."
     )
 
@@ -369,16 +369,6 @@ def main() -> None:
         written_files.append(clean_metadata_path)
 
     # Step 4: standardization from clean files.
-    sample_channel = channel_names[0]
-    write_clean_channel_csv_samples(
-        by_channel_dir=by_channel_dir,
-        channel_name=sample_channel,
-        written_files=written_files,
-        sample_size=5,
-        random_state=42,
-    )
-
-    # Step 4: standardization from clean files.
     for channel_name in channel_names:
         clean_feature_path = by_channel_dir / f"{channel_name}_features_clean.parquet"
         clean_metadata_path = by_channel_dir / f"{channel_name}_metadata_clean.parquet"
@@ -418,6 +408,16 @@ def main() -> None:
         written_files.append(scaler_path)
 
         print_scaling_validation(channel_name, scaled_df, fitting_mask, test_mask)
+
+    # Create one scaled sample after scaling is complete.
+    sample_channel = channel_names[0]
+    write_scaled_channel_csv_samples(
+        by_channel_dir=by_channel_dir,
+        channel_name=sample_channel,
+        written_files=written_files,
+        sample_size=5,
+        random_state=42,
+    )
 
     print_written_files_summary(project_root, written_files)
     print("\nPreprocessing (steps 3-4) completed successfully.")
