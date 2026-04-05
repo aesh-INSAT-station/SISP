@@ -234,6 +234,52 @@ def print_written_files_summary(project_root: Path, files: list[Path]) -> None:
         print(f"  - {relative_path} ({human_readable_size(path.stat().st_size)})")
 
 
+def write_clean_channel_csv_samples(
+    by_channel_dir: Path,
+    channel_name: str,
+    written_files: list[Path],
+    sample_size: int = 5,
+    random_state: int = 42,
+) -> None:
+    clean_feature_path = by_channel_dir / f"{channel_name}_features_clean.parquet"
+    clean_metadata_path = by_channel_dir / f"{channel_name}_metadata_clean.parquet"
+
+    features_clean = pd.read_parquet(clean_feature_path, engine="pyarrow")
+    metadata_clean = pd.read_parquet(clean_metadata_path, engine="pyarrow")
+    assert_row_alignment(features_clean, metadata_clean, channel_name, "clean-sample-load")
+
+    if len(features_clean) == 0:
+        raise RuntimeError(
+            f"Cannot create clean sample CSVs for channel '{channel_name}' because there are no rows."
+        )
+
+    n_rows = min(sample_size, len(features_clean))
+    sampled_index = features_clean.sample(n=n_rows, random_state=random_state).index
+
+    sample_features = features_clean.loc[sampled_index].reset_index(drop=True)
+    sample_metadata = metadata_clean.loc[sampled_index].reset_index(drop=True)
+    assert_row_alignment(sample_features, sample_metadata, channel_name, "clean-sample-selected")
+
+    sample_default = pd.concat([sample_metadata, sample_features], axis=1)
+
+    sample_default_path = by_channel_dir / f"{channel_name}_sample_clean_default.csv"
+    sample_features_path = by_channel_dir / f"{channel_name}_sample_clean_features.csv"
+    sample_metadata_path = by_channel_dir / f"{channel_name}_sample_clean_metadata.csv"
+
+    sample_default.to_csv(sample_default_path, index=False)
+    sample_features.to_csv(sample_features_path, index=False)
+    sample_metadata.to_csv(sample_metadata_path, index=False)
+
+    written_files.append(sample_default_path)
+    written_files.append(sample_features_path)
+    written_files.append(sample_metadata_path)
+
+    print(
+        f"\nClean sample CSVs written for channel '{channel_name}' "
+        f"(rows={n_rows})."
+    )
+
+
 def main() -> None:
     project_root = Path(__file__).resolve().parent
     by_channel_dir = project_root / "data" / "interim" / "by_channel"
@@ -321,6 +367,16 @@ def main() -> None:
 
         written_files.append(clean_feature_path)
         written_files.append(clean_metadata_path)
+
+    # Step 4: standardization from clean files.
+    sample_channel = channel_names[0]
+    write_clean_channel_csv_samples(
+        by_channel_dir=by_channel_dir,
+        channel_name=sample_channel,
+        written_files=written_files,
+        sample_size=5,
+        random_state=42,
+    )
 
     # Step 4: standardization from clean files.
     for channel_name in channel_names:
