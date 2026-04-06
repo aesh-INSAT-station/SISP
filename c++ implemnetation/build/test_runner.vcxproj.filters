@@ -1,0 +1,46 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="16.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_encode_decode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_payload_codec.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_state_machine.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_degr.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sisp_protocol.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sisp_encoder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sisp_decoder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sisp_state_machine.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sisp_degr.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sim_hooks.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\HP\aesh\SISP\c++ implemnetation\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{3ED5B9DB-3475-370E-94E9-8C2A2C7611DC}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

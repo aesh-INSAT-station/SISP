@@ -1,0 +1,10 @@
+^C:\USERS\HP\AESH\SISP\C++ IMPLEMNETATION\BUILD\CMAKEFILES\8B6091F4346FBAD9A4D570724161364C\GENERATE.STAMP.RULE
+setlocal
+C:\Users\HP\AppData\Local\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\mingw64\bin\cmake.exe "-SC:/Users/HP/aesh/SISP/c++ implemnetation" "-BC:/Users/HP/aesh/SISP/c++ implemnetation/build" --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file "C:/Users/HP/aesh/SISP/c++ implemnetation/build/SISP_Protocol.sln"
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="16.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\HP\aesh\SISP\c++ implemnetation\build\CMakeFiles\8b6091f4346fbad9a4d570724161364c\RUN_TESTS_force.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{DD87A85C-CD1F-39D3-8B37-3323EF25914E}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
