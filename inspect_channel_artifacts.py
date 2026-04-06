@@ -7,6 +7,11 @@ from typing import Any
 import joblib
 import pandas as pd
 
+from sisp.utils.logger import get_logger
+
+
+logger = get_logger()
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -35,12 +40,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def print_dataframe(title: str, df: pd.DataFrame, rows: int) -> None:
-    print(f"\n=== {title} ===")
-    print(f"Shape: {df.shape[0]} rows x {df.shape[1]} columns")
+    logger.info(f"\n=== {title} ===")
+    logger.info(f"Shape: {df.shape[0]} rows x {df.shape[1]} columns")
 
     preview_df = df if rows <= 0 else df.head(rows)
     if preview_df.empty:
-        print("[EMPTY TABLE]")
+        logger.info("[EMPTY TABLE]")
         return
 
     with pd.option_context(
@@ -53,12 +58,12 @@ def print_dataframe(title: str, df: pd.DataFrame, rows: int) -> None:
         "display.expand_frame_repr",
         False,
     ):
-        print(preview_df.to_string(index=False))
+        logger.info(preview_df.to_string(index=False))
 
 
 def print_missing(label: str, path: Path) -> None:
-    print(f"\n=== {label} ===")
-    print(f"[MISSING] {path}")
+    logger.info(f"\n=== {label} ===")
+    logger.info(f"[MISSING] {path}")
 
 
 def load_and_print_parquet(label: str, path: Path, rows: int) -> None:
@@ -99,7 +104,7 @@ def load_and_print_scaler(label: str, path: Path, rows: int) -> None:
     print_dataframe(f"{label} summary ({path.name})", summary_df, rows=0)
 
     if not hasattr(scaler, "mean_") or not hasattr(scaler, "scale_"):
-        print("Scaler has no mean_/scale_ attributes to display.")
+        logger.info("Scaler has no mean_/scale_ attributes to display.")
         return
 
     means = list(getattr(scaler, "mean_"))
@@ -159,9 +164,9 @@ def main() -> None:
         ),
     ]
 
-    print(f"Project root: {args.project_root}")
-    print(f"Channel: {args.channel}")
-    print(f"Rows shown per table: {'ALL' if args.rows <= 0 else args.rows}")
+    logger.info(f"Project root: {args.project_root}")
+    logger.info(f"Channel: {args.channel}")
+    logger.info(f"Rows shown per table: {'ALL' if args.rows <= 0 else args.rows}")
 
     for label, path, artifact_type in artifacts:
         if artifact_type == "parquet":
