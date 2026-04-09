@@ -11,6 +11,12 @@ extern "C" {
 /* These are the only functions the Python simulation calls via ctypes */
 
 /**
+ * Allocate/destroy a protocol context for Python simulation.
+ */
+SISP::Context* sim_create_context(uint8_t my_id);
+void sim_destroy_context(SISP::Context* ctx);
+
+/**
  * Inject a received packet (as if the radio delivered it).
  */
 void sim_inject_packet(SISP::Context* ctx, const uint8_t* buf, uint16_t len);

@@ -6,6 +6,8 @@ int test_encode_decode();
 int test_payload_codec();
 int test_frame_pipeline();
 int test_state_machine();
+int test_protocol_simulation();
+int test_comprehensive_state_machine();
 int test_degr();
 
 int main() {
@@ -54,6 +56,20 @@ int main() {
         total_tests += result;
     }
 
+    std::cout << "\n--- Protocol Simulation Tests ---" << std::endl;
+    result = test_protocol_simulation();
+    if (result < 0) {
+        failed_groups++;
+    } else {
+        total_tests += result;
+    }
+    std::cout << "\n--- Comprehensive State Machine Tests (Level 2 Matrix) ---" << std::endl;
+    result = test_comprehensive_state_machine();
+    if (result < 0) {
+        failed_groups++;
+    } else {
+        total_tests += result;
+    }
     std::cout << "\n===== Summary =====" << std::endl;
     std::cout << "Executed tests: " << total_tests << std::endl;
     std::cout << "Failed groups: " << failed_groups << std::endl;

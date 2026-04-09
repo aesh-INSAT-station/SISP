@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sisp_protocol.hpp"
+#include "sisp_correction.hpp"
 #include <array>
 #include <cstdint>
 
@@ -86,17 +87,24 @@ struct Context {
     uint8_t self_id;                               // local node id
     uint8_t peer_id;                               // who we're talking to
     uint8_t seq;                                   // current sequence #
+    uint8_t out_seq;                               // dedicated outgoing sequence #
     uint8_t current_degr;                          // local node degradation score
     ServiceCode service;                           // which service
     uint32_t timer_deadline_ms;                    // absolute expiry time
     uint8_t retry_count;                           // retransmits so far
     uint8_t max_retries;                           // give up after this
+
+    // Replay protection (30s sliding window)
+    std::array<uint8_t, 256> last_seen_seq;        // last SEQ seen per sender
+    std::array<uint32_t, 256> last_seen_ts;        // timestamp of last SEQ
+    std::array<uint8_t, 256> last_seen_valid;      // 0/1 valid marker
     
     // Correction-specific
     std::array<std::array<float, 3>, 8> rsp_readings;  // up to 8 neighbours
     std::array<float, 8> rsp_weights;
     uint8_t rsp_count;
     std::array<float, 3> corrected_value;
+    CorrectionFilter* correction_filter;            // External correction algorithm
     CorrectionReq last_correction_req;
     CorrectionRsp last_correction_rsp;
     
@@ -122,12 +130,15 @@ struct Context {
     Failure last_failure;
     
     Context() 
-                : state(State::IDLE), self_id(0), peer_id(0), seq(0), current_degr(0),
+                : state(State::IDLE), self_id(0), peer_id(0), seq(0), out_seq(0), current_degr(0),
           service(ServiceCode::CORRECTION_REQ),
           timer_deadline_ms(0), retry_count(0), max_retries(3),
-          rsp_count(0), relay_buf(nullptr), relay_buf_len(0),
+          rsp_count(0), correction_filter(nullptr), relay_buf(nullptr), relay_buf_len(0),
           frag_total(0), frag_sent(0), frag_rcvd_mask(0),
           borrow_sensor(SensorType::MAGNETOMETER), borrow_duration_s(0) {
+            last_seen_seq.fill(0);
+            last_seen_ts.fill(0);
+            last_seen_valid.fill(0);
         rsp_readings.fill({});
         rsp_weights.fill(0.0f);
         corrected_value.fill(0.0f);
@@ -171,6 +182,13 @@ public:
      * Initialize a fresh context.
      */
     static void init_context(Context& ctx, uint8_t my_id);
+
+    /**
+     * Set the correction filter for this context.
+     * The protocol does not own the filter; caller retains ownership.
+     * Can be called at any time to switch algorithms.
+     */
+    static void set_correction_filter(Context& ctx, CorrectionFilter* filter);
 
     /**
      * Timer tick — call every 100ms from main loop or RTOS task.

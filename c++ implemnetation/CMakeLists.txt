@@ -29,6 +29,7 @@ set(SISP_SOURCES
     src/sisp_decoder.cpp
     src/sisp_state_machine.cpp
     src/sisp_degr.cpp
+    src/sisp_correction.cpp
     src/sim_hooks.cpp
 )
 
@@ -50,6 +51,8 @@ add_executable(test_runner
     tests/test_payload_codec.cpp
     tests/test_frame_pipeline.cpp
     tests/test_state_machine.cpp
+    tests/test_protocol_simulation.cpp
+    tests/test_comprehensive_matrix.cpp
     tests/test_degr.cpp
     tests/test_main.cpp
     ${SISP_SOURCES}

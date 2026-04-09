@@ -16,6 +16,9 @@
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sisp_degr.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sisp_correction.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sim_hooks.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

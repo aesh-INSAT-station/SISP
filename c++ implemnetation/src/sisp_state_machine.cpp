@@ -109,6 +109,7 @@ static void init_transitions() {
 
     for (size_t state_index = 0; state_index < static_cast<size_t>(State::STATE_COUNT); ++state_index) {
         g_trans[state_index][static_cast<size_t>(Event::CRITICAL_FAILURE)] = { State::CRITICAL_FAIL, action_broadcast_failure };
+        g_trans[state_index][static_cast<size_t>(Event::RX_FAILURE)] = { State::CRITICAL_FAIL, action_broadcast_failure };
     }
 
     g_trans_initialized = true;
@@ -126,7 +127,8 @@ static void action_send_correction_req(Context& ctx, const Packet*) {
     out.header.svc = ServiceCode::CORRECTION_REQ;
     out.header.sndr = ctx.self_id;
     out.header.rcvr = BCAST_ADDR;
-    out.header.seq = ++ctx.seq;
+    out.header.seq = ++ctx.out_seq;
+    ctx.seq = ctx.out_seq;
     out.header.degr = ctx.current_degr;
     out.header.flags = FLAG_OFFGRID;
 
@@ -154,7 +156,8 @@ static void action_send_correction_rsp(Context& ctx, const Packet* pkt) {
     out.header.svc = ServiceCode::CORRECTION_RSP;
     out.header.sndr = ctx.self_id;
     out.header.rcvr = pkt->header.sndr;
-    out.header.seq = ++ctx.seq;
+    out.header.seq = ++ctx.out_seq;
+    ctx.seq = ctx.out_seq;
     out.header.degr = ctx.current_degr;
     out.header.flags = FLAG_OFFGRID | FLAG_PROTO;
 
@@ -164,7 +167,7 @@ static void action_send_correction_rsp(Context& ctx, const Packet* pkt) {
     serialize_payload(rsp, out.payload.data(), MAX_PAYLOAD, out.payload_len);
 
     TransportMeta meta{};
-    meta.session_id = static_cast<uint16_t>(ctx.seq);
+    meta.session_id = static_cast<uint16_t>(ctx.out_seq);
     meta.ack_seq = pkt->header.seq;
     meta.window = 1;
     transmit_packet(out, pkt->header.sndr, meta);
@@ -189,53 +192,52 @@ static void action_collect_rsp(Context& ctx, const Packet* pkt) {
     ctx.rsp_count++;
 }
 
-static float weighted_median_1d(const std::array<std::array<float, 3>, 8>& values,
-                                const std::array<float, 8>& weights,
-                                uint8_t count,
-                                size_t axis) {
-    std::array<size_t, 8> order{};
-    std::array<float, 8> sorted_values{};
-    std::array<float, 8> sorted_weights{};
-
-    for (uint8_t i = 0; i < count; ++i) {
-        order[i] = i;
-    }
-
-    std::sort(order.begin(), order.begin() + count, [&](size_t lhs, size_t rhs) {
-        return values[lhs][axis] < values[rhs][axis];
-    });
-
-    float total_weight = 0.0f;
-    for (uint8_t i = 0; i < count; ++i) {
-        sorted_values[i] = values[order[i]][axis];
-        sorted_weights[i] = std::max(0.0f, weights[order[i]]);
-        total_weight += sorted_weights[i];
-    }
-
-    if (total_weight <= 0.0f) {
-        return 0.0f;
-    }
-
-    float cumulative = 0.0f;
-    for (uint8_t i = 0; i < count; ++i) {
-        cumulative += sorted_weights[i];
-        if (cumulative >= (total_weight * 0.5f)) {
-            return sorted_values[i];
-        }
-    }
-
-    return sorted_values[count - 1];
-}
 
 static void action_run_kalman(Context& ctx, const Packet*) {
-    if (ctx.rsp_count == 0) {
-        ctx.corrected_value.fill(0.0f);
+    if (!ctx.correction_filter) {
+        // No correction filter configured; use raw weighted average as fallback
+        if (ctx.rsp_count == 0) {
+            ctx.corrected_value.fill(0.0f);
+            return;
+        }
+
+        ctx.corrected_value[0] = 0.0f;
+        ctx.corrected_value[1] = 0.0f;
+        ctx.corrected_value[2] = 0.0f;
+        float total_w = 0.0f;
+        for (uint8_t i = 0; i < ctx.rsp_count; ++i) {
+            float w = ctx.rsp_weights[i];
+            ctx.corrected_value[0] += ctx.rsp_readings[i][0] * w;
+            ctx.corrected_value[1] += ctx.rsp_readings[i][1] * w;
+            ctx.corrected_value[2] += ctx.rsp_readings[i][2] * w;
+            total_w += w;
+        }
+        if (total_w > 0.0f) {
+            ctx.corrected_value[0] /= total_w;
+            ctx.corrected_value[1] /= total_w;
+            ctx.corrected_value[2] /= total_w;
+        }
         return;
     }
 
-    ctx.corrected_value[0] = weighted_median_1d(ctx.rsp_readings, ctx.rsp_weights, ctx.rsp_count, 0);
-    ctx.corrected_value[1] = weighted_median_1d(ctx.rsp_readings, ctx.rsp_weights, ctx.rsp_count, 1);
-    ctx.corrected_value[2] = weighted_median_1d(ctx.rsp_readings, ctx.rsp_weights, ctx.rsp_count, 2);
+    // Use the configured correction filter
+    CorrectionInput filter_input{};
+    for (uint8_t i = 0; i < ctx.rsp_count && i < 8; ++i) {
+        filter_input.readings[i].x = ctx.rsp_readings[i][0];
+        filter_input.readings[i].y = ctx.rsp_readings[i][1];
+        filter_input.readings[i].z = ctx.rsp_readings[i][2];
+        filter_input.weights[i] = ctx.rsp_weights[i];
+    }
+    filter_input.count = ctx.rsp_count;
+
+    CorrectionOutput filter_output{};
+    if (ctx.correction_filter->apply(filter_input, filter_output)) {
+        ctx.corrected_value[0] = filter_output.corrected.x;
+        ctx.corrected_value[1] = filter_output.corrected.y;
+        ctx.corrected_value[2] = filter_output.corrected.z;
+    } else {
+        ctx.corrected_value.fill(0.0f);
+    }
 }
 
 static void action_send_relay_req(Context& ctx, const Packet*) {
@@ -246,7 +248,8 @@ static void action_send_relay_req(Context& ctx, const Packet*) {
     out.header.svc = ServiceCode::RELAY_REQ;
     out.header.sndr = ctx.self_id;
     out.header.rcvr = BCAST_ADDR;
-    out.header.seq = ++ctx.seq;
+    out.header.seq = ++ctx.out_seq;
+    ctx.seq = ctx.out_seq;
     out.header.degr = ctx.current_degr;
     out.header.flags = static_cast<uint8_t>(FLAG_OFFGRID | FLAG_RELAY);
 
@@ -282,7 +285,8 @@ static void action_send_relay_accept(Context& ctx, const Packet* pkt) {
     out.header.svc = ServiceCode::RELAY_ACCEPT;
     out.header.sndr = ctx.self_id;
     out.header.rcvr = pkt->header.sndr;
-    out.header.seq = ++ctx.seq;
+    out.header.seq = ++ctx.out_seq;
+    ctx.seq = ctx.out_seq;
     out.header.degr = ctx.current_degr;
     out.header.flags = static_cast<uint8_t>(FLAG_OFFGRID | FLAG_RELAY);
 
@@ -313,7 +317,8 @@ static void action_send_relay_reject(Context& ctx, const Packet* pkt) {
     out.header.svc = ServiceCode::RELAY_REJECT;
     out.header.sndr = ctx.self_id;
     out.header.rcvr = pkt->header.sndr;
-    out.header.seq = ++ctx.seq;
+    out.header.seq = ++ctx.out_seq;
+    ctx.seq = ctx.out_seq;
     out.header.degr = ctx.current_degr;
     out.header.flags = static_cast<uint8_t>(FLAG_OFFGRID | FLAG_RELAY);
     serialize_payload(decision, out.payload.data(), MAX_PAYLOAD, out.payload_len);
@@ -358,7 +363,8 @@ static void action_send_frag(Context& ctx, const Packet* pkt) {
         out.header.svc = ServiceCode::DOWNLINK_DATA;
         out.header.sndr = ctx.self_id;
         out.header.rcvr = ctx.peer_id;
-        out.header.seq = ++ctx.seq;
+        out.header.seq = ++ctx.out_seq;
+        ctx.seq = ctx.out_seq;
         out.header.degr = ctx.current_degr;
         out.header.flags = static_cast<uint8_t>(FLAG_OFFGRID | FLAG_RELAY);
 
@@ -384,7 +390,8 @@ static void action_send_frag(Context& ctx, const Packet* pkt) {
     out.header.svc = ServiceCode::DOWNLINK_DATA;
     out.header.sndr = ctx.self_id;
     out.header.rcvr = ctx.peer_id;
-    out.header.seq = ++ctx.seq;
+    out.header.seq = ++ctx.out_seq;
+    ctx.seq = ctx.out_seq;
     out.header.degr = ctx.current_degr;
     out.header.flags = static_cast<uint8_t>(FLAG_OFFGRID | FLAG_RELAY);
 
@@ -439,7 +446,8 @@ static void action_send_borrow_data(Context& ctx, const Packet* pkt) {
     out.header.svc = ServiceCode::BORROW_REQ;
     out.header.sndr = ctx.self_id;
     out.header.rcvr = pkt ? pkt->header.sndr : ctx.peer_id;
-    out.header.seq = ++ctx.seq;
+    out.header.seq = ++ctx.out_seq;
+    ctx.seq = ctx.out_seq;
     out.header.degr = ctx.current_degr;
     out.header.flags = FLAG_OFFGRID;
 
@@ -463,7 +471,8 @@ static void action_send_ack(Context& ctx, const Packet* pkt) {
     out.header.svc = ServiceCode::DOWNLINK_ACK;
     out.header.sndr = ctx.self_id;
     out.header.rcvr = pkt->header.sndr;
-    out.header.seq = ++ctx.seq;
+    out.header.seq = ++ctx.out_seq;
+    ctx.seq = ctx.out_seq;
     out.header.degr = ctx.current_degr;
     out.header.flags = FLAG_OFFGRID;
 
@@ -478,11 +487,14 @@ static void action_send_ack(Context& ctx, const Packet* pkt) {
 }
 
 static void action_broadcast_failure(Context& ctx, const Packet*) {
+    ctx.current_degr = 15;
+
     Packet out{};
     out.header.svc = ServiceCode::FAILURE;
     out.header.sndr = ctx.self_id;
     out.header.rcvr = BCAST_ADDR;
-    out.header.seq = ++ctx.seq;
+    out.header.seq = ++ctx.out_seq;
+    ctx.seq = ctx.out_seq;
     out.header.degr = 15;
     out.header.flags = FLAG_OFFGRID;
 
@@ -525,6 +537,10 @@ void StateMachine::dispatch(Context& ctx, Event evt, const Packet* pkt) {
 void StateMachine::init_context(Context& ctx, uint8_t my_id) {
     ctx = Context{};
     ctx.self_id = my_id;
+}
+
+void StateMachine::set_correction_filter(Context& ctx, CorrectionFilter* filter) {
+    ctx.correction_filter = filter;
 }
 
 void StateMachine::tick(Context& ctx, uint32_t now_ms) {

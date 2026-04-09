@@ -13,6 +13,12 @@
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_state_machine.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_protocol_simulation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_comprehensive_matrix.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_degr.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -32,6 +38,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sisp_degr.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sisp_correction.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sim_hooks.cpp">

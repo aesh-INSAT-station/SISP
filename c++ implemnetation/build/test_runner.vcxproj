@@ -364,6 +364,8 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_payload_codec.cpp" />
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_frame_pipeline.cpp" />
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_state_machine.cpp" />
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_protocol_simulation.cpp" />
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_comprehensive_matrix.cpp" />
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_degr.cpp" />
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_main.cpp" />
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sisp_protocol.cpp" />
@@ -371,6 +373,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sisp_decoder.cpp" />
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sisp_state_machine.cpp" />
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sisp_degr.cpp" />
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sisp_correction.cpp" />
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sim_hooks.cpp" />
   </ItemGroup>
   <ItemGroup />

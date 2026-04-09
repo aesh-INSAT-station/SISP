@@ -366,6 +366,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sisp_decoder.cpp" />
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sisp_state_machine.cpp" />
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sisp_degr.cpp" />
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sisp_correction.cpp" />
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\src\sim_hooks.cpp" />
   </ItemGroup>
   <ItemGroup />
