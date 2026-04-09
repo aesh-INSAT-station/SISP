@@ -7,6 +7,9 @@
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_payload_codec.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_frame_pipeline.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_state_machine.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

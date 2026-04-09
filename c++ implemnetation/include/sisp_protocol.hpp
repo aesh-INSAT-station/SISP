@@ -17,6 +17,7 @@ namespace SISP {
 /* ■■ Version ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ */
 static constexpr uint8_t VERSION = 1;
 static constexpr uint16_t MAX_PACKET = 128;       // bytes, max total packet size
+static constexpr uint8_t FRAME_SIZE = 64;         // bytes, fixed 512-bit frame
 static constexpr uint8_t HEADER_SIZE = 5;         // bytes, fixed header
 static constexpr uint8_t SEC_PREFIX = 16;         // bytes, security prefix
 static constexpr uint16_t MAX_PAYLOAD = 107;      // = 128 - 5 - 16
@@ -191,6 +192,30 @@ struct Packet {
     }
 };
 
+/* ■■ Fixed 512-bit Frame Metadata ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ */
+struct TransportMeta {
+    uint16_t session_id;            // TCP-like session identifier
+    uint8_t ack_seq;                // TCP-like ack sequence
+    uint8_t window;                 // TCP-like advertised window
+    uint8_t datagram_tag;           // UDP-like datagram tag
+    uint8_t hop_limit;              // UDP-like hop limit
+    uint8_t relay_hops_remaining;   // relay extension
+    uint8_t relay_path_id;          // relay path identifier
+    uint16_t tmax_deadline_ds;      // time critical deadline in deciseconds
+
+    TransportMeta()
+        : session_id(0), ack_seq(0), window(0), datagram_tag(0), hop_limit(0),
+          relay_hops_remaining(0), relay_path_id(0), tmax_deadline_ds(0) {}
+};
+
+struct FrameInfo {
+    uint8_t payload_len;
+    uint8_t extension_len;
+    TransportMeta transport;
+
+    FrameInfo() : payload_len(0), extension_len(0), transport() {}
+};
+
 /* ■■ API Function Declarations ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ */
 
 // Convert SVC enum to string name
@@ -202,6 +227,11 @@ uint8_t compute_degr(float k_factor, float svd_residual,
 
 // CRC-8/MAXIM computation
 uint8_t compute_crc8_maxim(const uint8_t* data, size_t len);
+
+// 512-bit frame helpers
+uint8_t compute_frame_checksum(const uint8_t* data, size_t len_without_checksum);
+uint16_t compute_frame_extension_len(uint8_t flags);
+uint16_t compute_frame_payload_capacity(uint8_t flags);
 
 // Typed payload serialization helpers
 ErrorCode serialize_payload(const CorrectionReq& src, uint8_t* out, uint16_t capacity, uint16_t& out_len);

@@ -69,4 +69,73 @@ void Encoder::insert_checksum(uint8_t* buf) {
     buf[4] |= (cksm >> 4) & 0x0F;
 }
 
+ErrorCode Encoder::encode_frame(const Packet& pkt,
+                                const TransportMeta& meta,
+                                uint8_t out_frame[FRAME_SIZE]) {
+    if (!out_frame) {
+        return ErrorCode::ERR_LEN;
+    }
+
+    std::memset(out_frame, 0, FRAME_SIZE);
+
+    // Encode canonical 5-byte header first.
+    pack_header(pkt.header, out_frame);
+    insert_checksum(out_frame);
+
+    const uint16_t ext_len = compute_frame_extension_len(pkt.header.flags);
+    const uint16_t payload_cap = compute_frame_payload_capacity(pkt.header.flags);
+    if (pkt.payload_len > payload_cap || ext_len > 255 || pkt.payload_len > 255) {
+        return ErrorCode::ERR_LEN;
+    }
+
+    out_frame[5] = static_cast<uint8_t>(pkt.payload_len);
+    out_frame[6] = static_cast<uint8_t>(ext_len);
+    out_frame[7] = static_cast<uint8_t>(((pkt.header.flags & FLAG_PROTO) ? 0x01 : 0x00) |
+                                        ((pkt.header.flags & FLAG_RELAY) ? 0x02 : 0x00) |
+                                        ((pkt.header.flags & FLAG_TMAX) ? 0x04 : 0x00) |
+                                        ((pkt.header.flags & FLAG_OFFGRID) ? 0x08 : 0x00));
+
+    uint16_t cursor = 8;
+
+    // Transport extension depends on PROTO bit.
+    if (pkt.header.flags & FLAG_PROTO) {
+        out_frame[cursor + 0] = static_cast<uint8_t>((meta.session_id >> 8) & 0xFF);
+        out_frame[cursor + 1] = static_cast<uint8_t>(meta.session_id & 0xFF);
+        out_frame[cursor + 2] = meta.ack_seq;
+        out_frame[cursor + 3] = meta.window;
+        cursor += 4;
+    } else {
+        out_frame[cursor + 0] = meta.datagram_tag;
+        out_frame[cursor + 1] = meta.hop_limit;
+        cursor += 2;
+    }
+
+    if (pkt.header.flags & FLAG_RELAY) {
+        out_frame[cursor + 0] = meta.relay_hops_remaining;
+        out_frame[cursor + 1] = meta.relay_path_id;
+        cursor += 2;
+    }
+
+    if (pkt.header.flags & FLAG_TMAX) {
+        out_frame[cursor + 0] = static_cast<uint8_t>((meta.tmax_deadline_ds >> 8) & 0xFF);
+        out_frame[cursor + 1] = static_cast<uint8_t>(meta.tmax_deadline_ds & 0xFF);
+        cursor += 2;
+    }
+
+    if (!(pkt.header.flags & FLAG_OFFGRID)) {
+        std::memset(out_frame + cursor, 0x00, SEC_PREFIX);
+        cursor += SEC_PREFIX;
+    }
+
+    if (pkt.payload_len > 0) {
+        std::memcpy(out_frame + cursor, pkt.payload.data(), pkt.payload_len);
+        cursor += pkt.payload_len;
+    }
+
+    // Remaining bytes (except checksum) are already padded with zeros.
+    (void)cursor;
+    out_frame[FRAME_SIZE - 1] = compute_frame_checksum(out_frame, FRAME_SIZE - 1);
+    return ErrorCode::OK;
+}
+
 }  // namespace SISP

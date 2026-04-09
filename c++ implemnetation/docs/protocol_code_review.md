@@ -9,8 +9,9 @@ Those will be implemented in dedicated modules later.
 The C++ protocol stack provides:
 1. A compact wire header with checksum.
 2. Typed payload serialization and parsing for each protocol service.
-3. A deterministic state machine for correction, relay, and borrow workflows.
-4. Test coverage for codec round-trips and state transitions.
+3. A fixed 512-bit frame codec with transport-mode extensions controlled by protocol flags.
+4. A deterministic state machine for correction, relay, and borrow workflows.
+5. Test coverage for codec round-trips, frame pipeline, and state transitions.
 
 ## File-by-file Intent
 - include/sisp_protocol.hpp
@@ -19,8 +20,10 @@ The C++ protocol stack provides:
   - Implements CRC-8/MAXIM, service name lookup, DEGR computation, and all payload codecs.
 - include/sisp_encoder.hpp + src/sisp_encoder.cpp
   - Packs header fields into the 5-byte protocol header and appends payload/security prefix.
+  - Encodes fixed 64-byte (512-bit) frames with transport extensions.
 - include/sisp_decoder.hpp + src/sisp_decoder.cpp
   - Unpacks header fields, validates checksum/security placeholder, extracts payload bytes.
+  - Decodes fixed 64-byte (512-bit) frames and parses transport metadata.
 - include/sisp_state_machine.hpp + src/sisp_state_machine.cpp
   - Defines state/event enums, context, transition table, and action handlers.
   - Actions parse payloads and store protocol-level context snapshots.
@@ -31,9 +34,13 @@ The C++ protocol stack provides:
 Implemented in src/sisp_protocol.cpp.
 
 Design used now:
-1. k-factor contribution is binary:
-   - |k-1| <= 0.10 => 0
-   - |k-1| > 0.10 => 5/// wrong its like svd 
+1. k-factor contribution is gradual 0..5:
+  - |k-1| < 0.10 => 0
+  - |k-1| >= 0.10 => 1
+  - |k-1| >= 0.20 => 2
+  - |k-1| >= 0.30 => 3
+  - |k-1| >= 0.40 => 4
+  - |k-1| >= 0.50 => 5
 2. SVD residual contribution is bucketed 0..5:
    - (0.00, 0.20] => 1
    - (0.20, 0.40] => 2
@@ -45,6 +52,24 @@ Design used now:
 5. Final DEGR = clamp(k + svd + age + orbit, 0..15).
 
 No fminf scaling is used in this model.
+
+## Fixed 512-bit Frame Format
+Frame size is fixed to 64 bytes.
+
+Layout:
+1. Bytes 0-4: protocol header (with header checksum nibble).
+2. Byte 5: payload length.
+3. Byte 6: extension length.
+4. Byte 7: frame control bits mirroring protocol mode bits.
+5. Bytes 8..N: mode-dependent extension region then payload.
+6. Byte 63: frame checksum over bytes 0..62 (CRC-8/MAXIM).
+
+Mode-dependent extension behavior:
+1. PROTO=1 (TCP-like): session_id(2), ack_seq(1), window(1).
+2. PROTO=0 (UDP-like): datagram_tag(1), hop_limit(1).
+3. RELAY=1: relay_hops_remaining(1), relay_path_id(1).
+4. TMAX=1: deadline_ds(2).
+5. OFFGRID=0: 16-byte security prefix placeholder.
 
 ## Typed Payload Codec Rules
 All integer fields are serialized as big-endian.
@@ -139,6 +164,9 @@ Not implemented yet (intentionally deferred):
   - Correction, relay, borrow transition and parse-storage checks.
 - tests/test_degr.cpp
   - DEGR thresholds, clamping, and bucket behavior.
+- tests/test_frame_pipeline.cpp
+  - 512-bit frame encode/decode (TCP-like and UDP-like modes).
+  - Multithread producer/consumer pipeline with real payload traffic.
 
 ## Next protocol-focused steps
 1. Enforce per-service payload length validation in the decoder pipeline.

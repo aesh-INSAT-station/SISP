@@ -48,6 +48,7 @@ enable_testing()
 add_executable(test_runner
     tests/test_encode_decode.cpp
     tests/test_payload_codec.cpp
+    tests/test_frame_pipeline.cpp
     tests/test_state_machine.cpp
     tests/test_degr.cpp
     tests/test_main.cpp

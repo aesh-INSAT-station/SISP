@@ -38,6 +38,57 @@ uint8_t compute_crc8_maxim(const uint8_t* data, size_t len) {
     return crc;
 }
 
+uint8_t compute_frame_checksum(const uint8_t* data, size_t len_without_checksum) {
+    return compute_crc8_maxim(data, len_without_checksum);
+}
+
+uint16_t compute_frame_extension_len(uint8_t flags) {
+    uint16_t ext_len = 0;
+
+    // Transport-mode extension:
+    // PROTO=1 => TCP-like tuple (session_id, ack_seq, window) => 4 bytes
+    // PROTO=0 => UDP-like tuple (datagram_tag, hop_limit) => 2 bytes
+    if (flags & FLAG_PROTO) {
+        ext_len += 4;
+    } else {
+        ext_len += 2;
+    }
+
+    // Optional relay extension (2 bytes)
+    if (flags & FLAG_RELAY) {
+        ext_len += 2;
+    }
+
+    // Optional time-critical extension (2 bytes)
+    if (flags & FLAG_TMAX) {
+        ext_len += 2;
+    }
+
+    // Security prefix included when OFFGRID=0
+    if (!(flags & FLAG_OFFGRID)) {
+        ext_len += SEC_PREFIX;
+    }
+
+    return ext_len;
+}
+
+uint16_t compute_frame_payload_capacity(uint8_t flags) {
+    // Frame layout:
+    // [0..4]   header
+    // [5]      payload_len
+    // [6]      extension_len
+    // [7]      control bits
+    // [8..]    extension bytes then payload
+    // [63]     frame checksum
+    const uint16_t overhead = HEADER_SIZE + 3 + 1;  // header + meta + frame checksum
+    const uint16_t ext_len = compute_frame_extension_len(flags);
+    const uint16_t total = static_cast<uint16_t>(overhead + ext_len);
+    if (total >= FRAME_SIZE) {
+        return 0;
+    }
+    return static_cast<uint16_t>(FRAME_SIZE - total);
+}
+
 /* ■■ Service Code Name Lookup ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ */
 const char* svc_name(ServiceCode svc) {
     switch (svc) {

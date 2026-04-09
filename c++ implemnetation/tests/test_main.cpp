@@ -4,6 +4,7 @@
 // Forward declare test functions
 int test_encode_decode();
 int test_payload_codec();
+int test_frame_pipeline();
 int test_state_machine();
 int test_degr();
 
@@ -23,6 +24,14 @@ int main() {
 
     std::cout << "\n--- Payload Codec Tests ---" << std::endl;
     result = test_payload_codec();
+    if (result < 0) {
+        failed_groups++;
+    } else {
+        total_tests += result;
+    }
+
+    std::cout << "\n--- 512-bit Frame Pipeline Tests ---" << std::endl;
+    result = test_frame_pipeline();
     if (result < 0) {
         failed_groups++;
     } else {

@@ -25,6 +25,14 @@ public:
      */
     static ErrorCode encode(const Packet& pkt, uint8_t* buf, uint16_t& out_len);
 
+    /**
+     * Encode a packet into a fixed-size 512-bit frame (64 bytes).
+     * Layout: 5-byte header + frame meta + transport/security extensions + payload + frame checksum.
+     */
+    static ErrorCode encode_frame(const Packet& pkt,
+                                  const TransportMeta& meta,
+                                  uint8_t out_frame[FRAME_SIZE]);
+
 private:
     /**
      * Pack the 5-byte header into bytes following the canonical bit layout.

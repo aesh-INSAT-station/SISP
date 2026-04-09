@@ -25,6 +25,13 @@ public:
      */
     static ErrorCode decode(const uint8_t* buf, uint16_t len, Packet& out_pkt);
 
+    /**
+     * Decode a fixed 512-bit frame into packet + frame metadata.
+     */
+    static ErrorCode decode_frame(const uint8_t in_frame[FRAME_SIZE],
+                                  Packet& out_pkt,
+                                  FrameInfo& out_info);
+
 private:
     /**
      * Unpack the 5-byte header from raw bytes.
@@ -35,6 +42,8 @@ private:
      * Validate the checksum by comparing computed vs received.
      */
     static bool validate_checksum(const uint8_t* buf);
+
+    static bool validate_header_checksum(const uint8_t* buf);
 };
 
 }  // namespace SISP

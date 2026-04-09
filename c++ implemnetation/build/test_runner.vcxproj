@@ -362,6 +362,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
   <ItemGroup>
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_encode_decode.cpp" />
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_payload_codec.cpp" />
+    <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_frame_pipeline.cpp" />
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_state_machine.cpp" />
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_degr.cpp" />
     <ClCompile Include="C:\Users\HP\aesh\SISP\c++ implemnetation\tests\test_main.cpp" />

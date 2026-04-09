@@ -86,6 +86,7 @@ struct Context {
     uint8_t self_id;                               // local node id
     uint8_t peer_id;                               // who we're talking to
     uint8_t seq;                                   // current sequence #
+    uint8_t current_degr;                          // local node degradation score
     ServiceCode service;                           // which service
     uint32_t timer_deadline_ms;                    // absolute expiry time
     uint8_t retry_count;                           // retransmits so far
@@ -104,7 +105,7 @@ struct Context {
     uint16_t relay_buf_len;
     uint8_t frag_total;
     uint8_t frag_sent;
-    uint8_t frag_rcvd_mask;
+    uint32_t frag_rcvd_mask;
     RelayReq last_relay_req;
     RelayDecision last_relay_decision;
     DownlinkData last_downlink_data;
@@ -121,7 +122,7 @@ struct Context {
     Failure last_failure;
     
     Context() 
-        : state(State::IDLE), self_id(0), peer_id(0), seq(0), 
+                : state(State::IDLE), self_id(0), peer_id(0), seq(0), current_degr(0),
           service(ServiceCode::CORRECTION_REQ),
           timer_deadline_ms(0), retry_count(0), max_retries(3),
           rsp_count(0), relay_buf(nullptr), relay_buf_len(0),

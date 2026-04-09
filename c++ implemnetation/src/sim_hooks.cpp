@@ -38,7 +38,7 @@ void sim_inject_packet(Context* ctx, const uint8_t* buf, uint16_t len) {
     }
 
     // Check if this packet is for us (or broadcast)
-    if (!pkt.is_for_me(0x00)) {  // TODO: Get actual my_id
+    if (!pkt.is_for_me(ctx->self_id)) {
         return;
     }
 
@@ -63,7 +63,7 @@ void sim_get_corrected(const Context* ctx, float out[3]) {
 
 uint8_t sim_get_degr(const Context* ctx) {
     if (!ctx) return 0;
-    return ctx->state != State::IDLE ? 15 : 0;  // TODO: Return actual DEGR
+    return ctx->current_degr;
 }
 
 void sim_get_neighbour_degr(const Context* ctx, uint8_t out[256]) {
@@ -79,6 +79,13 @@ void sim_advance_time(Context* ctx, uint32_t ms) {
 
 void sim_register_tx_callback(sim_tx_cb cb) {
     g_tx_callback = cb;
+}
+
+void sim_transmit_packet(uint8_t dst, const uint8_t* buf, uint16_t len) {
+    if (!g_tx_callback || !buf) {
+        return;
+    }
+    g_tx_callback(dst, buf, len);
 }
 
 }  // extern "C"

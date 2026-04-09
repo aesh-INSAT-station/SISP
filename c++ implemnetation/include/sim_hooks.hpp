@@ -51,6 +51,11 @@ void sim_advance_time(SISP::Context* ctx, uint32_t ms);
 typedef void (*sim_tx_cb)(uint8_t dst, const uint8_t* buf, uint16_t len);
 void sim_register_tx_callback(sim_tx_cb cb);
 
+/**
+ * Send a frame through the registered callback.
+ */
+void sim_transmit_packet(uint8_t dst, const uint8_t* buf, uint16_t len);
+
 #ifdef __cplusplus
 }
 #endif
