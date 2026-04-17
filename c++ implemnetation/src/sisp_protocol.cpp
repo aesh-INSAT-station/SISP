@@ -102,7 +102,7 @@ const char* svc_name(ServiceCode svc) {
         case ServiceCode::STATUS_BROADCAST:   return "STATUS_BROADCAST";
         case ServiceCode::HEARTBEAT:          return "HEARTBEAT";
         case ServiceCode::HEARTBEAT_ACK:      return "HEARTBEAT_ACK";
-        case ServiceCode::RESERVED_A:         return "RESERVED_A";
+        case ServiceCode::BORROW_DECISION:    return "BORROW_DECISION";
         case ServiceCode::RESERVED_B:         return "RESERVED_B";
         case ServiceCode::RESERVED_C:         return "RESERVED_C";
         case ServiceCode::RESERVED_D:         return "RESERVED_D";

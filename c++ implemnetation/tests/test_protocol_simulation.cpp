@@ -79,6 +79,7 @@ static void sim_deliver_packet(SimulatedNode& sender,
         case ServiceCode::RELAY_REQ:         evt = Event::RX_RELAY_REQ; break;
         case ServiceCode::RELAY_ACCEPT:      evt = Event::RX_RELAY_ACCEPT; break;
         case ServiceCode::RELAY_REJECT:      evt = Event::RX_RELAY_REJECT; break;
+              case ServiceCode::BORROW_DECISION:   evt = Event::RX_BORROW_DECISION; break;
         case ServiceCode::HEARTBEAT:         evt = Event::RX_HEARTBEAT; break;
         case ServiceCode::STATUS_BROADCAST:  evt = Event::RX_STATUS_BROADCAST; break;
         default: return;
@@ -255,11 +256,13 @@ static void test_scenario_pluggable_correction() {
 
 // Scenario 5: Error handling - corrupted packet rejection
 static void test_scenario_error_handling() {
-    SimulatedNode node{};
+       SimulatedNode sender{}, node{};
+       sender.node_id = 0x0A;
     node.node_id = 0x09;
+       StateMachine::init_context(sender.state_ctx, sender.node_id);
     StateMachine::init_context(node.state_ctx, node.node_id);
 
-    // Create a valid heartbeat
+       // Create a valid heartbeat packet/frame.
     Heartbeat hb{};
     hb.energy_pct = 80;
     hb.degr = 2;
@@ -274,14 +277,27 @@ static void test_scenario_error_handling() {
     hb_pkt.header.flags = FLAG_OFFGRID;
     serialize_payload(hb, hb_pkt.payload.data(), MAX_PAYLOAD, hb_pkt.payload_len);
 
-    // Corrupt the checksum
-    uint8_t* raw = reinterpret_cast<uint8_t*>(&hb_pkt);
-    raw[4] ^= 0x01;  // Flip one bit in checksum location
+    TransportMeta meta{};
+    meta.datagram_tag = 1;
+    meta.hop_limit = 1;
 
-    // Attempt to dispatch corrupted packet (should probably fail at decoder level)
-    // This tests that the protocol layer gracefully handles bad inputs
-    ASSERT(node.state_ctx.last_heartbeat.energy_pct != 80, 
-           "Error: Corrupted packet rejected");
+    uint8_t valid_frame[FRAME_SIZE]{};
+    ErrorCode enc_err = Encoder::encode_frame(hb_pkt, meta, valid_frame);
+    ASSERT(enc_err == ErrorCode::OK, "Error: Valid heartbeat frame encoded");
+
+    uint8_t corrupted_frame[FRAME_SIZE]{};
+    std::memcpy(corrupted_frame, valid_frame, FRAME_SIZE);
+    corrupted_frame[FRAME_SIZE - 1] ^= 0x01;  // Flip frame checksum bit.
+
+    // Corrupted frame must be dropped by decoder path.
+    sim_deliver_packet(sender, node, corrupted_frame, FRAME_SIZE);
+    ASSERT(node.state_ctx.last_heartbeat.energy_pct == 0,
+           "Error: Corrupted frame rejected");
+
+    // Valid frame must still be accepted.
+    sim_deliver_packet(sender, node, valid_frame, FRAME_SIZE);
+    ASSERT(node.state_ctx.last_heartbeat.energy_pct == 80,
+           "Error: Valid frame accepted after corrupted frame drop");
 }
 
 // Scenario 6: State machine RESET from any state

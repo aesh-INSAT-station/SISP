@@ -1,23 +1,137 @@
 #include "sim_hooks.hpp"
 #include "sisp_decoder.hpp"
 #include "sisp_state_machine.hpp"
+#include "sisp_correction.hpp"
+#include <algorithm>
 #include <cstring>
+#include <memory>
+#include <unordered_map>
 
 using namespace SISP;
 
 static sim_tx_cb g_tx_callback = nullptr;
 static uint32_t g_current_time_ms = 0;
+static std::unordered_map<Context*, std::unique_ptr<CorrectionFilter>> g_filters;
+
+static bool is_duplicate(Context* ctx, const Packet& pkt, uint32_t now_ms) {
+    const uint8_t src = pkt.header.sndr;
+    const uint8_t seq = pkt.header.seq;
+    if (ctx->last_seen_valid[src] != 0U &&
+        ctx->last_seen_seq[src] == seq &&
+        (now_ms - ctx->last_seen_ts[src]) < 30000U) {
+        return true;
+    }
+
+    ctx->last_seen_valid[src] = 1U;
+    ctx->last_seen_seq[src] = seq;
+    ctx->last_seen_ts[src] = now_ms;
+    return false;
+}
 
 extern "C" {
+
+Context* sim_create_context(uint8_t my_id) {
+    Context* ctx = new Context{};
+    StateMachine::init_context(*ctx, my_id);
+    return ctx;
+}
+
+void sim_destroy_context(Context* ctx) {
+    g_filters.erase(ctx);
+    delete ctx;
+}
+
+void sim_use_kalman_filter(Context* ctx, float process_noise, float measurement_noise) {
+    if (!ctx) return;
+    auto filter = std::make_unique<KalmanFilter>(process_noise, measurement_noise);
+    StateMachine::set_correction_filter(*ctx, filter.get());
+    g_filters[ctx] = std::move(filter);
+}
+
+void sim_use_weighted_median_filter(Context* ctx) {
+    if (!ctx) return;
+    auto filter = std::make_unique<WeightedMedianFilter>();
+    StateMachine::set_correction_filter(*ctx, filter.get());
+    g_filters[ctx] = std::move(filter);
+}
+
+void sim_use_hybrid_filter(Context* ctx, float process_noise, float measurement_noise) {
+    if (!ctx) return;
+    auto filter = std::make_unique<HybridFilter>(process_noise, measurement_noise);
+    StateMachine::set_correction_filter(*ctx, filter.get());
+    g_filters[ctx] = std::move(filter);
+}
+
+void sim_clear_correction_filter(Context* ctx) {
+    if (!ctx) return;
+    g_filters.erase(ctx);
+    StateMachine::set_correction_filter(*ctx, nullptr);
+}
+
+void sim_inject_correction_rsp(
+    Context* ctx,
+    uint8_t sndr,
+    uint8_t seq,
+    uint8_t degr,
+    uint8_t sensor_type,
+    float x,
+    float y,
+    float z,
+    uint32_t ts_ms
+) {
+    if (!ctx) return;
+
+    Packet pkt{};
+    pkt.header.svc = ServiceCode::CORRECTION_RSP;
+    pkt.header.sndr = sndr;
+    pkt.header.rcvr = ctx->self_id;
+    pkt.header.seq = seq;
+    pkt.header.degr = degr;
+    pkt.header.flags = FLAG_OFFGRID;
+
+    CorrectionRsp rsp{};
+    rsp.sensor_type = static_cast<SensorType>(sensor_type);
+    rsp.reading.x = x;
+    rsp.reading.y = y;
+    rsp.reading.z = z;
+    rsp.reading.ts_ms = ts_ms;
+    if (serialize_payload(rsp, pkt.payload.data(), MAX_PAYLOAD, pkt.payload_len) != ErrorCode::OK) {
+        return;
+    }
+
+    // Keep neighbour table coherent for weighting/telemetry.
+    ctx->neighbour_degr[sndr] = degr;
+    ctx->neighbour_last_seen[sndr] = g_current_time_ms;
+    ctx->peer_friendly[sndr] = 1U;
+
+    StateMachine::dispatch(*ctx, Event::RX_CORRECTION_RSP, &pkt);
+}
 
 void sim_inject_packet(Context* ctx, const uint8_t* buf, uint16_t len) {
     if (!ctx || !buf) return;
 
     Packet pkt{};
-    ErrorCode err = Decoder::decode(buf, len, pkt);
+    ErrorCode err = ErrorCode::ERR_LEN;
+    if (len == FRAME_SIZE) {
+        FrameInfo info{};
+        err = Decoder::decode_frame(buf, pkt, info);
+    } else {
+        err = Decoder::decode(buf, len, pkt);
+    }
     if (err != ErrorCode::OK) {
         return;  // Silently drop invalid packets
     }
+
+    // Drop replay packets inside a 30s sliding window.
+    if (is_duplicate(ctx, pkt, g_current_time_ms)) {
+        return;
+    }
+
+    // Update neighbour trust table on every received packet.
+    const uint8_t peer = pkt.header.sndr;
+    ctx->neighbour_degr[peer] = pkt.header.degr;
+    ctx->neighbour_last_seen[peer] = g_current_time_ms;
+    ctx->peer_friendly[peer] = 1U;
 
     // Map service code to event
     Event evt;
@@ -32,6 +146,7 @@ void sim_inject_packet(Context* ctx, const uint8_t* buf, uint16_t len) {
         case ServiceCode::STATUS_BROADCAST:  evt = Event::RX_STATUS_BROADCAST; break;
         case ServiceCode::HEARTBEAT:         evt = Event::RX_HEARTBEAT; break;
         case ServiceCode::HEARTBEAT_ACK:     evt = Event::RX_HEARTBEAT_ACK; break;
+        case ServiceCode::BORROW_DECISION:   evt = Event::RX_BORROW_DECISION; break;
         case ServiceCode::BORROW_REQ:        evt = Event::RX_BORROW_REQ; break;
         case ServiceCode::FAILURE:           evt = Event::RX_FAILURE; break;
         default:                             return;  // Ignore reserved codes
@@ -68,7 +183,101 @@ uint8_t sim_get_degr(const Context* ctx) {
 
 void sim_get_neighbour_degr(const Context* ctx, uint8_t out[256]) {
     if (!ctx || !out) return;
-    std::memset(out, 0, 256);  // TODO: Populate from neighbour table
+    std::memcpy(out, ctx->neighbour_degr.data(), 256);
+}
+
+void sim_set_relay_payload(Context* ctx, const uint8_t* data, uint16_t len) {
+    if (!ctx) return;
+
+    ctx->relay_tx_storage.fill(0);
+    ctx->relay_tx_len = 0;
+    ctx->relay_buf = nullptr;
+    ctx->relay_buf_len = 0;
+    ctx->frag_sent = 0;
+
+    if (!data || len == 0) {
+        ctx->frag_total = 1;
+        return;
+    }
+
+    uint16_t copy_len = std::min<uint16_t>(len, static_cast<uint16_t>(ctx->relay_tx_storage.size()));
+    std::memcpy(ctx->relay_tx_storage.data(), data, copy_len);
+    ctx->relay_tx_len = copy_len;
+    ctx->relay_buf = ctx->relay_tx_storage.data();
+    ctx->relay_buf_len = copy_len;
+
+    uint16_t frag_total = static_cast<uint16_t>((copy_len + MAX_FRAGMENT_DATA - 1U) / MAX_FRAGMENT_DATA);
+    if (frag_total == 0) {
+        frag_total = 1;
+    }
+    if (frag_total > 255U) {
+        frag_total = 255U;
+    }
+    ctx->frag_total = static_cast<uint8_t>(frag_total);
+}
+
+uint16_t sim_get_relay_rx_len(const Context* ctx) {
+    if (!ctx) return 0;
+    return ctx->relay_rx_len;
+}
+
+uint16_t sim_copy_relay_rx_payload(const Context* ctx, uint8_t* out, uint16_t capacity) {
+    if (!ctx || !out || capacity == 0) {
+        return 0;
+    }
+
+    uint16_t copy_len = std::min<uint16_t>(ctx->relay_rx_len, capacity);
+    if (copy_len == 0) {
+        return 0;
+    }
+
+    std::memcpy(out, ctx->relay_rx_storage.data(), copy_len);
+    return copy_len;
+}
+
+void sim_get_known_failures(const Context* ctx, uint8_t out[256]) {
+    if (!ctx || !out) return;
+    std::memcpy(out, ctx->known_failed.data(), 256);
+}
+
+uint8_t sim_get_last_failed_satellite(const Context* ctx) {
+    if (!ctx) return 0;
+    return ctx->last_failed_satellite_id;
+}
+
+uint8_t sim_decode_header(
+    const uint8_t* buf,
+    uint16_t len,
+    uint8_t* svc,
+    uint8_t* sndr,
+    uint8_t* rcvr,
+    uint8_t* seq,
+    uint8_t* degr,
+    uint8_t* flags
+) {
+    if (!buf || !svc || !sndr || !rcvr || !seq || !degr || !flags) {
+        return 0;
+    }
+
+    Packet pkt{};
+    ErrorCode err = ErrorCode::ERR_LEN;
+    if (len == FRAME_SIZE) {
+        FrameInfo info{};
+        err = Decoder::decode_frame(buf, pkt, info);
+    } else {
+        err = Decoder::decode(buf, len, pkt);
+    }
+    if (err != ErrorCode::OK) {
+        return 0;
+    }
+
+    *svc = static_cast<uint8_t>(pkt.header.svc);
+    *sndr = pkt.header.sndr;
+    *rcvr = pkt.header.rcvr;
+    *seq = pkt.header.seq;
+    *degr = pkt.header.degr;
+    *flags = pkt.header.flags;
+    return 1;
 }
 
 void sim_advance_time(Context* ctx, uint32_t ms) {

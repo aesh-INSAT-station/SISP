@@ -40,6 +40,7 @@ static Event map_svc_to_event(ServiceCode svc) {
         case ServiceCode::STATUS_BROADCAST: return Event::RX_STATUS_BROADCAST;
         case ServiceCode::HEARTBEAT: return Event::RX_HEARTBEAT;
         case ServiceCode::HEARTBEAT_ACK: return Event::RX_HEARTBEAT_ACK;
+        case ServiceCode::BORROW_DECISION: return Event::RX_BORROW_DECISION;
         case ServiceCode::BORROW_REQ: return Event::RX_BORROW_REQ;
         case ServiceCode::FAILURE: return Event::RX_FAILURE;
         default: return Event::RESET;

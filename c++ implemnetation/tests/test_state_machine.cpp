@@ -81,6 +81,7 @@ void test_correction_happy_path() {
 
     ASSERT(ctx.rsp_count == 2, "Collected 2 responses");
     ASSERT(ctx.last_correction_rsp.reading.z == 310.0f, "Last correction response parsed");
+    ASSERT(ctx.rsp_timestamps_ms[1] == 11, "Correction response timestamp buffered");
 }
 
 void test_timeout_no_neighbours() {
@@ -189,6 +190,79 @@ void test_borrow_transition() {
     StateMachine::dispatch(ctx, Event::RX_BORROW_REQ, &borrow_pkt);
     ASSERT(ctx.state == State::BORROW_SAMPLING, "Borrow request enters sampling state");
     ASSERT(ctx.borrow_duration_s == 120, "Borrow request parsed");
+    ASSERT(ctx.peer_id == 0x0A, "Borrow requester peer tracked");
+    ASSERT(ctx.last_borrow_decision.accepted == 1, "Borrow decision prepared on request receipt");
+}
+
+void test_borrow_decision_transition() {
+    Context ctx{};
+    StateMachine::init_context(ctx, 0x03);
+    ctx.state = State::BORROW_WAIT_ACCEPT;
+
+    BorrowDecision decision{};
+    decision.accepted = 1;
+    decision.duration_s = 240;
+
+    Packet decision_pkt{};
+    decision_pkt.header.svc = ServiceCode::BORROW_DECISION;
+    decision_pkt.header.sndr = 0x0A;
+    decision_pkt.header.rcvr = 0x03;
+    decision_pkt.header.flags = FLAG_OFFGRID;
+    serialize_payload(decision, decision_pkt.payload.data(), MAX_PAYLOAD, decision_pkt.payload_len);
+
+    StateMachine::dispatch(ctx, Event::RX_BORROW_DECISION, &decision_pkt);
+    ASSERT(ctx.state == State::BORROW_RECEIVING, "Borrow decision moves requester to receiving state");
+    ASSERT(ctx.last_borrow_decision.accepted == 1, "Borrow decision parsed");
+    ASSERT(ctx.borrow_duration_s == 240, "Borrow decision duration stored");
+}
+
+void test_full_message_recovery_out_of_order_fragments() {
+    Context ctx{};
+    StateMachine::init_context(ctx, 0x03);
+    ctx.state = State::BORROW_RECEIVING;
+
+    constexpr uint16_t kFragCount = 3;
+    constexpr uint16_t kFragSize = MAX_FRAGMENT_DATA;
+    constexpr uint16_t kTotalLen = static_cast<uint16_t>(kFragCount * kFragSize);
+
+    std::array<uint8_t, kTotalLen> expected{};
+    for (uint16_t i = 0; i < kTotalLen; ++i) {
+        expected[i] = static_cast<uint8_t>((i * 13U + 7U) & 0xFFU);
+    }
+
+    auto send_fragment = [&](uint16_t fragment_index, uint8_t seq) {
+        DownlinkData data{};
+        data.fragment_index = fragment_index;
+        data.fragment_total = kFragCount;
+        data.data_len = kFragSize;
+        std::memcpy(data.data.data(), expected.data() + (fragment_index * kFragSize), kFragSize);
+
+        Packet pkt{};
+        pkt.header.svc = ServiceCode::DOWNLINK_DATA;
+        pkt.header.sndr = 0x0A;
+        pkt.header.rcvr = 0x03;
+        pkt.header.seq = seq;
+        pkt.header.degr = 2;
+        pkt.header.flags = FLAG_OFFGRID;
+        serialize_payload(data, pkt.payload.data(), MAX_PAYLOAD, pkt.payload_len);
+
+        StateMachine::dispatch(ctx, Event::RX_DOWNLINK_DATA, &pkt);
+        ASSERT(ctx.state == State::BORROW_RECEIVING,
+               "Out-of-order fragment processing keeps BORROW_RECEIVING state");
+    };
+
+    // Out-of-order delivery with a duplicate: 2, 0, 1, 1.
+    send_fragment(2, 13);
+    send_fragment(0, 11);
+    send_fragment(1, 12);
+    send_fragment(1, 14);
+
+    ASSERT((ctx.frag_rcvd_mask & 0x7u) == 0x7u,
+           "Fragment bitmask tracks all required fragments despite out-of-order delivery");
+    ASSERT(ctx.relay_rx_len == kTotalLen,
+           "Recovered message length matches full multi-fragment payload");
+    ASSERT(std::memcmp(ctx.relay_rx_storage.data(), expected.data(), kTotalLen) == 0,
+           "Recovered message bytes match expected payload after sequencing recovery");
 }
 
 int test_state_machine() {
@@ -202,6 +276,8 @@ int test_state_machine() {
     test_relay_energy_low();
     test_relay_provider_side();
     test_borrow_transition();
+    test_borrow_decision_transition();
+    test_full_message_recovery_out_of_order_fragments();
 
     std::cout << "State Machine: " << g_passed_count << "/" << g_test_count << std::endl;
     if (g_passed_count != g_test_count) {

@@ -97,6 +97,8 @@ private:
 
     float q;  // Process noise
     float r;  // Measurement noise
+    uint32_t last_update_ts_ms;
+    bool has_last_update_ts;
 };
 
 /**

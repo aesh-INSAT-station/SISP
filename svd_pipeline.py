@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from statistics import NormalDist
 
 import joblib
 import pandas as pd
@@ -20,6 +21,7 @@ TARGET_EXPLAINED_VARIANCE = 0.90
 MIN_COMPONENTS = 2
 MAX_COMPONENTS = 15
 THRESHOLD_PERCENTILE = 0.95
+CHI_SQUARE_CONFIDENCE = 0.95
 RANDOM_STATE = 42
 
 
@@ -251,6 +253,15 @@ def print_split_report(split_name: str, metrics: dict[str, float | int]) -> None
     print(f"ROC-AUC: {metrics['roc_auc']:.6f}")
 
 
+def approximate_chi_square_critical(dof: int, confidence: float) -> float:
+    # Wilson-Hilferty approximation, accurate for moderate/large dof.
+    dof = max(1, int(dof))
+    confidence = min(max(confidence, 1e-6), 1.0 - 1e-6)
+    z = NormalDist().inv_cdf(confidence)
+    base = 1.0 - (2.0 / (9.0 * dof)) + z * ((2.0 / (9.0 * dof)) ** 0.5)
+    return float(dof * (base ** 3))
+
+
 def score_channel_and_write_results(
     channel_name: str,
     features_scaled: pd.DataFrame,
@@ -282,7 +293,22 @@ def score_channel_and_write_results(
     fit_error_mean = float(fit_errors.mean())
     fit_error_std = float(fit_errors.std(ddof=0))
 
-    predicted_anomaly = (reconstruction_error > threshold).astype("int64")
+    predicted_anomaly_percentile = (reconstruction_error > threshold).astype("int64")
+
+    n_features = int(x_full.shape[1])
+    n_components = int(getattr(svd_model, "n_components", min(n_features, 1)))
+    chi_square_dof = max(1, n_features - n_components)
+    # Scale residual energy to an approximate chi-square statistic.
+    spe_scale = max(1e-12, fit_error_mean / float(chi_square_dof))
+    chi_square_stat = reconstruction_error / spe_scale
+    chi_square_threshold = approximate_chi_square_critical(
+        dof=chi_square_dof,
+        confidence=CHI_SQUARE_CONFIDENCE,
+    )
+    predicted_anomaly_chi_square = (chi_square_stat > chi_square_threshold).astype("int64")
+
+    # Backward-compatible output field keeps percentile detector as default.
+    predicted_anomaly = predicted_anomaly_percentile
 
     anomaly_flag = normalize_anomaly_flag(metadata_clean["anomaly"])
     if bool(anomaly_flag.isna().any()):
@@ -301,6 +327,10 @@ def score_channel_and_write_results(
             "anomaly": metadata_clean["anomaly"],
             "reconstruction_error": reconstruction_error,
             "threshold": threshold,
+            "chi_square_stat": chi_square_stat,
+            "chi_square_threshold": chi_square_threshold,
+            "predicted_anomaly_percentile": predicted_anomaly_percentile,
+            "predicted_anomaly_chi_square": predicted_anomaly_chi_square,
             "predicted_anomaly": predicted_anomaly,
         }
     )
@@ -315,15 +345,26 @@ def score_channel_and_write_results(
     results_df.to_parquet(output_path, index=False, engine="pyarrow")
     written_files.append(output_path)
 
-    test_metrics = compute_split_metrics(
+    test_metrics_percentile = compute_split_metrics(
         y_true.loc[test_mask].reset_index(drop=True),
-        predicted_anomaly.loc[test_mask].reset_index(drop=True),
+        predicted_anomaly_percentile.loc[test_mask].reset_index(drop=True),
         reconstruction_error.loc[test_mask].reset_index(drop=True),
     )
-    train_metrics = compute_split_metrics(
+    train_metrics_percentile = compute_split_metrics(
         y_true.loc[train_mask].reset_index(drop=True),
-        predicted_anomaly.loc[train_mask].reset_index(drop=True),
+        predicted_anomaly_percentile.loc[train_mask].reset_index(drop=True),
         reconstruction_error.loc[train_mask].reset_index(drop=True),
+    )
+
+    test_metrics_chi_square = compute_split_metrics(
+        y_true.loc[test_mask].reset_index(drop=True),
+        predicted_anomaly_chi_square.loc[test_mask].reset_index(drop=True),
+        chi_square_stat.loc[test_mask].reset_index(drop=True),
+    )
+    train_metrics_chi_square = compute_split_metrics(
+        y_true.loc[train_mask].reset_index(drop=True),
+        predicted_anomaly_chi_square.loc[train_mask].reset_index(drop=True),
+        chi_square_stat.loc[train_mask].reset_index(drop=True),
     )
 
     nominal_mean = float(reconstruction_error.loc[y_true == 0].mean())
@@ -332,8 +373,18 @@ def score_channel_and_write_results(
     print(f"\nStep 6 - channel '{channel_name}'")
     print(f"Threshold T (95th percentile of fit-row errors): {threshold:.6f}")
     print(f"Fit-row error mean/std: {fit_error_mean:.6f} / {fit_error_std:.6f}")
-    print_split_report("TEST (train=False)", test_metrics)
-    print_split_report("TRAIN (train=True)", train_metrics)
+    print(
+        "Chi-square detector: "
+        f"dof={chi_square_dof}, threshold={chi_square_threshold:.6f}, spe_scale={spe_scale:.6e}"
+    )
+
+    print("Percentile detector metrics")
+    print_split_report("TEST (train=False)", test_metrics_percentile)
+    print_split_report("TRAIN (train=True)", train_metrics_percentile)
+
+    print("Chi-square detector metrics")
+    print_split_report("TEST (train=False)", test_metrics_chi_square)
+    print_split_report("TRAIN (train=True)", train_metrics_chi_square)
     print(f"Mean reconstruction error for anomaly=0: {nominal_mean:.6f}")
     print(f"Mean reconstruction error for anomaly=1: {anomaly_mean:.6f}")
 
