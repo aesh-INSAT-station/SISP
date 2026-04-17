@@ -5,9 +5,15 @@ import random
 import math
 
 BASE_DIR = os.path.dirname(__file__)
-DLL_PATH = os.path.join(BASE_DIR, "c++ implemnetation", "build", "bin", "Release", "sisp.dll")
-if not os.path.exists(DLL_PATH):
-    raise FileNotFoundError(f"sisp.dll not found at: {DLL_PATH}")
+DLL_CANDIDATES = [
+    os.path.join(BASE_DIR, "..", "..", "c++ implemnetation", "build", "bin", "Release", "sisp.dll"),
+    os.path.join(BASE_DIR, "..", "c++ implemnetation", "build", "bin", "Release", "sisp.dll"),
+    os.path.join(BASE_DIR, "c++ implemnetation", "build", "bin", "Release", "sisp.dll"),
+]
+DLL_PATH = next((p for p in DLL_CANDIDATES if os.path.exists(p)), None)
+
+if DLL_PATH is None:
+    raise FileNotFoundError("sisp.dll not found in expected build locations.")
 
 lib = ctypes.CDLL(DLL_PATH)
 
