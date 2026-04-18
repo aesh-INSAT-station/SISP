@@ -117,6 +117,7 @@ struct Context {
     std::array<float, 8> rsp_weights;
     uint8_t rsp_count;
     std::array<float, 3> corrected_value;
+    Vec3Reading own_reading;
     CorrectionFilter* correction_filter;            // External correction algorithm
     CorrectionReq last_correction_req;
     CorrectionRsp last_correction_rsp;
@@ -169,6 +170,7 @@ struct Context {
         rsp_timestamps_ms.fill(0);
         rsp_weights.fill(0.0f);
         corrected_value.fill(0.0f);
+        own_reading = {};
         relay_tx_storage.fill(0);
         relay_rx_storage.fill(0);
         last_correction_req = {};

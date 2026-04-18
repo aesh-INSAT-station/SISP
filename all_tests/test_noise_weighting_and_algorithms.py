@@ -116,6 +116,92 @@ def generate_asymmetric_measurements(rounds, healthy_sigma, broken_sigma, seed):
     return data
 
 
+def generate_burst_outlier_measurements(rounds, base_sigma, outlier_sigma, outlier_prob, seed):
+    rng = random.Random(seed)
+    data = []
+    for _ in range(rounds):
+        m2 = [
+            TRUE_X + rng.gauss(0.0, base_sigma),
+            TRUE_Y + rng.gauss(0.0, base_sigma),
+            TRUE_Z + rng.gauss(0.0, base_sigma),
+        ]
+        m3 = [
+            TRUE_X + rng.gauss(0.0, base_sigma),
+            TRUE_Y + rng.gauss(0.0, base_sigma),
+            TRUE_Z + rng.gauss(0.0, base_sigma),
+        ]
+
+        # Inject sparse large outliers independently per responder.
+        if rng.random() < outlier_prob:
+            m2[0] += rng.gauss(0.0, outlier_sigma)
+            m2[1] += rng.gauss(0.0, outlier_sigma)
+            m2[2] += rng.gauss(0.0, outlier_sigma)
+        if rng.random() < outlier_prob:
+            m3[0] += rng.gauss(0.0, outlier_sigma)
+            m3[1] += rng.gauss(0.0, outlier_sigma)
+            m3[2] += rng.gauss(0.0, outlier_sigma)
+
+        data.append((tuple(m2), tuple(m3)))
+    return data
+
+
+def generate_persistent_biased_measurements(rounds, healthy_sigma, noisy_sigma, bias_xyz, seed):
+    rng = random.Random(seed)
+    bx, by, bz = bias_xyz
+    data = []
+    for _ in range(rounds):
+        healthy = (
+            TRUE_X + rng.gauss(0.0, healthy_sigma),
+            TRUE_Y + rng.gauss(0.0, healthy_sigma),
+            TRUE_Z + rng.gauss(0.0, healthy_sigma),
+        )
+        biased = (
+            TRUE_X + bx + rng.gauss(0.0, noisy_sigma),
+            TRUE_Y + by + rng.gauss(0.0, noisy_sigma),
+            TRUE_Z + bz + rng.gauss(0.0, noisy_sigma),
+        )
+        data.append((healthy, biased))
+    return data
+
+
+def generate_mixed_outlier_measurements(rounds, base_sigma, outlier_sigma, outlier_prob, seed):
+    rng = random.Random(seed)
+    data = []
+    for _ in range(rounds):
+        m2 = [
+            TRUE_X + rng.gauss(0.0, base_sigma),
+            TRUE_Y + rng.gauss(0.0, base_sigma),
+            TRUE_Z + rng.gauss(0.0, base_sigma),
+        ]
+        m3 = [
+            TRUE_X + rng.gauss(0.0, base_sigma),
+            TRUE_Y + rng.gauss(0.0, base_sigma),
+            TRUE_Z + rng.gauss(0.0, base_sigma),
+        ]
+
+        # m2 gets rare huge spikes; m3 gets moderate drift-like bursts.
+        if rng.random() < outlier_prob:
+            sign = -1.0 if rng.random() < 0.5 else 1.0
+            m2[0] += sign * abs(rng.gauss(0.0, outlier_sigma))
+            m2[1] -= sign * abs(rng.gauss(0.0, outlier_sigma * 0.8))
+            m2[2] += sign * abs(rng.gauss(0.0, outlier_sigma * 0.6))
+
+        if rng.random() < (outlier_prob * 1.5):
+            m3[0] += rng.gauss(0.0, outlier_sigma * 0.35)
+            m3[1] += rng.gauss(0.0, outlier_sigma * 0.35)
+            m3[2] += rng.gauss(0.0, outlier_sigma * 0.35)
+
+        data.append((tuple(m2), tuple(m3)))
+    return data
+
+
+def innovation_norm(mx, my, mz, px, py, pz):
+    dx = mx - px
+    dy = my - py
+    dz = mz - pz
+    return math.sqrt(dx * dx + dy * dy + dz * dz)
+
+
 def run_case(algorithm, sigma2, sigma3, rounds, weight_mode, measurements):
     sat1 = lib.sim_create_context(1)
     if not sat1:
@@ -126,7 +212,7 @@ def run_case(algorithm, sigma2, sigma3, rounds, weight_mode, measurements):
             lib.sim_clear_correction_filter(sat1)
         elif algorithm == "weighted_median":
             lib.sim_use_weighted_median_filter(sat1)
-        elif algorithm == "kalman":
+        elif algorithm == "kalman" or algorithm == "gated_kalman":
             lib.sim_use_kalman_filter(sat1, ctypes.c_float(0.02), ctypes.c_float(0.8))
         elif algorithm == "hybrid":
             lib.sim_use_hybrid_filter(sat1, ctypes.c_float(0.02), ctypes.c_float(0.8))
@@ -141,6 +227,7 @@ def run_case(algorithm, sigma2, sigma3, rounds, weight_mode, measurements):
         raw_ss_acc = 0.0
         corr_ss_acc = 0.0
         ss_count = 0
+        pred = None
 
         for r in range(1, rounds + 1):
             lib.sim_inject_event(sat1, EVT_FAULT_DETECTED)
@@ -156,6 +243,19 @@ def run_case(algorithm, sigma2, sigma3, rounds, weight_mode, measurements):
             d2 = degr_from_error(err2, sigma2, weight_mode)
             d3 = degr_from_error(err3, sigma3, weight_mode)
 
+            if algorithm == "gated_kalman" and pred is not None:
+                px, py, pz = pred
+                innov2 = innovation_norm(m2x, m2y, m2z, px, py, pz)
+                innov3 = innovation_norm(m3x, m3y, m3z, px, py, pz)
+
+                # Soft innovation gate: suspiciously far samples are strongly downweighted.
+                gate2 = max(3.0 * sigma2, 3.0)
+                gate3 = max(3.0 * sigma3, 3.0)
+                if innov2 > gate2:
+                    d2 = 15
+                if innov3 > gate3:
+                    d3 = 15
+
             lib.sim_inject_correction_rsp(sat1, 2, seq2, d2, SENSOR_MAGNETOMETER, m2x, m2y, m2z, ts)
             lib.sim_inject_correction_rsp(sat1, 3, seq3, d3, SENSOR_MAGNETOMETER, m3x, m3y, m3z, ts + 1)
 
@@ -164,6 +264,7 @@ def run_case(algorithm, sigma2, sigma3, rounds, weight_mode, measurements):
             corrected = (ctypes.c_float * 3)()
             lib.sim_get_corrected(sat1, corrected)
             cx, cy, cz = float(corrected[0]), float(corrected[1]), float(corrected[2])
+            pred = (cx, cy, cz)
 
             lib.sim_inject_event(sat1, EVT_CORRECTION_DONE)
 
@@ -209,6 +310,94 @@ def print_table(title, rows):
         )
 
 
+def print_outlier_table(title, rows):
+    print(f"\n{title}")
+    print("scenario                      algo             raw(ss)  corr(ss) gain(ss)")
+    print("----------------------------  ---------------  -------  -------- --------")
+    for row in rows:
+        print(
+            f"{row['scenario']:<28}  {row['algo']:<15}  "
+            f"{row['avg_raw_ss']:>7.3f}  {row['avg_corr_ss']:>8.3f} {row['ss_gain']:>8.3f}"
+        )
+
+
+def run_outlier_scenario_matrix(rounds=110):
+    algorithms = ["raw", "weighted_median", "kalman", "gated_kalman", "hybrid"]
+    scenarios = [
+        {
+            "name": "burst_5pct_heavy",
+            "sigma2": 8.0,
+            "sigma3": 8.0,
+            "measurements": generate_burst_outlier_measurements(
+                rounds=rounds,
+                base_sigma=8.0,
+                outlier_sigma=75.0,
+                outlier_prob=0.05,
+                seed=20260418,
+            ),
+        },
+        {
+            "name": "burst_15pct_moderate",
+            "sigma2": 10.0,
+            "sigma3": 10.0,
+            "measurements": generate_burst_outlier_measurements(
+                rounds=rounds,
+                base_sigma=10.0,
+                outlier_sigma=45.0,
+                outlier_prob=0.15,
+                seed=20260419,
+            ),
+        },
+        {
+            "name": "persistent_bias_peer3",
+            "sigma2": 2.0,
+            "sigma3": 30.0,
+            "measurements": generate_persistent_biased_measurements(
+                rounds=rounds,
+                healthy_sigma=2.0,
+                noisy_sigma=30.0,
+                bias_xyz=(35.0, -20.0, 12.0),
+                seed=20260420,
+            ),
+        },
+        {
+            "name": "mixed_spike_plus_drift",
+            "sigma2": 12.0,
+            "sigma3": 12.0,
+            "measurements": generate_mixed_outlier_measurements(
+                rounds=rounds,
+                base_sigma=12.0,
+                outlier_sigma=70.0,
+                outlier_prob=0.10,
+                seed=20260421,
+            ),
+        },
+    ]
+
+    rows = []
+    for scenario in scenarios:
+        for algo in algorithms:
+            stats = run_case(
+                algo,
+                scenario["sigma2"],
+                scenario["sigma3"],
+                rounds,
+                "inverse_error",
+                scenario["measurements"],
+            )
+            rows.append(
+                {
+                    "scenario": scenario["name"],
+                    "algo": algo,
+                    "avg_raw_ss": stats["avg_raw_ss"],
+                    "avg_corr_ss": stats["avg_corr_ss"],
+                    "ss_gain": stats["ss_gain"],
+                }
+            )
+
+    print_outlier_table("--- outlier stress scenarios (inverse-error DEGR) ---", rows)
+
+
 def run_kalman_degr_sensitivity(rounds=120, healthy_sigma=2.0, broken_sigma=50.0):
     measurements = generate_asymmetric_measurements(rounds, healthy_sigma, broken_sigma, seed=240516)
 
@@ -249,7 +438,7 @@ def benchmark_runtime_budget(rounds=400, sigma=30.0):
 
 def main():
     sigmas = [2.0, 5.0, 8.0, 12.0, 16.0, 20.0, 30.0, 40.0, 60.0]
-    algorithms = ["raw", "weighted_median", "kalman", "hybrid"]
+    algorithms = ["raw", "weighted_median", "kalman", "gated_kalman", "hybrid"]
     rounds = 90
 
     print("=== Noise/Weight/Algorithm Comparison (C++ correction engine) ===")
@@ -294,6 +483,8 @@ def main():
                 }
             )
     print_table("--- one healthy responder + one broken responder, inverse-error DEGR ---", broken_rows)
+
+    run_outlier_scenario_matrix(rounds=110)
 
     run_kalman_degr_sensitivity(rounds=140, healthy_sigma=2.0, broken_sigma=50.0)
     benchmark_runtime_budget(rounds=500, sigma=30.0)

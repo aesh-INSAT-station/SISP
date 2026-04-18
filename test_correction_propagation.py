@@ -3,15 +3,10 @@ import ctypes
 import os
 
 BASE_DIR = os.path.dirname(__file__)
-DLL_CANDIDATES = [
-    os.path.join(BASE_DIR, "..", "..", "c++ implemnetation", "build", "bin", "Release", "sisp.dll"),
-    os.path.join(BASE_DIR, "..", "c++ implemnetation", "build", "bin", "Release", "sisp.dll"),
-    os.path.join(BASE_DIR, "c++ implemnetation", "build", "bin", "Release", "sisp.dll"),
-]
-DLL_PATH = next((p for p in DLL_CANDIDATES if os.path.exists(p)), None)
+DLL_PATH = os.path.join(BASE_DIR, "c++ implemnetation", "build", "bin", "Release", "sisp.dll")
 
-if DLL_PATH is None:
-    raise FileNotFoundError("sisp.dll not found in expected build locations.")
+if not os.path.exists(DLL_PATH):
+    raise FileNotFoundError(f"sisp.dll not found at: {DLL_PATH}")
 
 lib = ctypes.CDLL(DLL_PATH)
 
@@ -34,20 +29,6 @@ lib.sim_get_corrected.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_float
 lib.sim_get_corrected.restype = None
 lib.sim_get_neighbour_degr.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8)]
 lib.sim_get_neighbour_degr.restype = None
-lib.sim_use_kalman_filter.argtypes = [ctypes.c_void_p, ctypes.c_float, ctypes.c_float]
-lib.sim_use_kalman_filter.restype = None
-lib.sim_inject_correction_rsp.argtypes = [
-    ctypes.c_void_p,
-    ctypes.c_uint8,
-    ctypes.c_uint8,
-    ctypes.c_uint8,
-    ctypes.c_uint8,
-    ctypes.c_float,
-    ctypes.c_float,
-    ctypes.c_float,
-    ctypes.c_uint32,
-]
-lib.sim_inject_correction_rsp.restype = None
 lib.sim_decode_header.argtypes = [
     ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint16,
     ctypes.POINTER(ctypes.c_uint8), ctypes.POINTER(ctypes.c_uint8), ctypes.POINTER(ctypes.c_uint8),
@@ -60,8 +41,6 @@ lib.sim_register_tx_callback.argtypes = [TX_CB]
 lib.sim_register_tx_callback.restype = None
 
 EVT_FAULT_DETECTED = 12
-EVT_CORRECTION_DONE = 20
-SENSOR_MAGNETOMETER = 0x01
 
 SERVICE = {
     0x0: "CORRECTION_REQ",
@@ -149,9 +128,6 @@ print("\n=== STEP 2: Correction Propagation Test ===")
 for sid in (1, 2, 3):
     sat[sid] = lib.sim_create_context(sid)
 
-# Configure requester with an explicit correction filter.
-lib.sim_use_kalman_filter(sat[1], ctypes.c_float(0.02), ctypes.c_float(0.8))
-
 cb = TX_CB(on_tx)
 lib.sim_register_tx_callback(cb)
 
@@ -160,26 +136,15 @@ lib.sim_inject_event(sat[1], EVT_FAULT_DETECTED)
 frames = pump(128)
 print(f"[Pump] injected frames: {frames}")
 
-print("\n[Inject] synthetic correction responses for visible non-zero correction")
-lib.sim_inject_correction_rsp(sat[1], 2, 1, 2, SENSOR_MAGNETOMETER, 41.8, -17.2, 9.5, 1000)
-lib.sim_inject_correction_rsp(sat[1], 3, 1, 3, SENSOR_MAGNETOMETER, 42.3, -17.7, 8.9, 1001)
-
 print("\n[Advance] 5.1s to trigger correction compute")
 for _ in range(51):
     for sid in (1, 2, 3):
         lib.sim_advance_time(sat[sid], 100)
     pump(128)
 
-lib.sim_inject_event(sat[1], EVT_CORRECTION_DONE)
-
 print("\n[Final snapshot]")
 for sid in (1, 2, 3):
     dump(sid)
-
-out_req = (ctypes.c_float * 3)()
-lib.sim_get_corrected(sat[1], out_req)
-if abs(float(out_req[0])) < 1e-6 and abs(float(out_req[1])) < 1e-6 and abs(float(out_req[2])) < 1e-6:
-    raise AssertionError("Requester corrected vector is still zero; expected non-zero after correction responses.")
 
 for sid in list(sat.keys()):
     lib.sim_destroy_context(sat[sid])

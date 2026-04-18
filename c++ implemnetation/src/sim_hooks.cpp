@@ -10,7 +10,8 @@
 using namespace SISP;
 
 static sim_tx_cb g_tx_callback = nullptr;
-static uint32_t g_current_time_ms = 0;
+uint32_t g_current_time_ms = 0;
+static std::unordered_map<Context*, sim_tx_cb> g_ctx_tx_callbacks;
 static std::unordered_map<Context*, std::unique_ptr<CorrectionFilter>> g_filters;
 
 static bool is_duplicate(Context* ctx, const Packet& pkt, uint32_t now_ms) {
@@ -38,6 +39,7 @@ Context* sim_create_context(uint8_t my_id) {
 
 void sim_destroy_context(Context* ctx) {
     g_filters.erase(ctx);
+    g_ctx_tx_callbacks.erase(ctx);
     delete ctx;
 }
 
@@ -216,6 +218,14 @@ void sim_set_relay_payload(Context* ctx, const uint8_t* data, uint16_t len) {
     ctx->frag_total = static_cast<uint8_t>(frag_total);
 }
 
+void sim_set_own_reading(Context* ctx, float x, float y, float z, uint32_t ts_ms) {
+    if (!ctx) return;
+    ctx->own_reading.x = x;
+    ctx->own_reading.y = y;
+    ctx->own_reading.z = z;
+    ctx->own_reading.ts_ms = ts_ms;
+}
+
 uint16_t sim_get_relay_rx_len(const Context* ctx) {
     if (!ctx) return 0;
     return ctx->relay_rx_len;
@@ -290,10 +300,36 @@ void sim_register_tx_callback(sim_tx_cb cb) {
     g_tx_callback = cb;
 }
 
-void sim_transmit_packet(uint8_t dst, const uint8_t* buf, uint16_t len) {
-    if (!g_tx_callback || !buf) {
+void sim_register_tx_callback_for(Context* ctx, sim_tx_cb cb) {
+    if (!ctx) {
         return;
     }
+    if (!cb) {
+        g_ctx_tx_callbacks.erase(ctx);
+        return;
+    }
+    g_ctx_tx_callbacks[ctx] = cb;
+}
+
+void sim_transmit_packet_ctx(const Context& ctx, uint8_t dst, const uint8_t* buf, uint16_t len) {
+    if (!buf) {
+        return;
+    }
+
+    sim_tx_cb cb = g_tx_callback;
+    auto it = g_ctx_tx_callbacks.find(const_cast<Context*>(&ctx));
+    if (it != g_ctx_tx_callbacks.end() && it->second) {
+        cb = it->second;
+    }
+
+    if (!cb) {
+        return;
+    }
+    cb(dst, buf, len);
+}
+
+void sim_transmit_packet(uint8_t dst, const uint8_t* buf, uint16_t len) {
+    if (!buf || !g_tx_callback) return;
     g_tx_callback(dst, buf, len);
 }
 

@@ -214,6 +214,16 @@ def relink_text_from_storage(raw_storage: bytes, fragments: List[bytes]) -> byte
     return bytes(out)
 
 
+def build_unique_payload(target_len: int) -> bytes:
+    # Build deterministic non-repetitive text so recovered output is easy to inspect by eye.
+    parts: List[bytes] = []
+    i = 1
+    while len(b"".join(parts)) < target_len:
+        parts.append(f"seg{i:02d}:telemetry+relay+correction|".encode("ascii"))
+        i += 1
+    return b"".join(parts)[:target_len]
+
+
 def on_tx(dst, buf_ptr, length):
     frame = ctypes.string_at(buf_ptr, length)
     svc, sndr, rcvr, seq, degr, flags = decode_header(frame)
@@ -298,9 +308,7 @@ def main() -> None:
     # Build a payload guaranteed to require exactly 3 fragments with current frame capacity.
     tail_len = max(1, min(23, max_data_per_fragment - 1))
     target_len = (2 * max_data_per_fragment) + tail_len
-    seed_text = b"relink text through sequencing and encoding errors "
-    repeats = (target_len // len(seed_text)) + 2
-    text_payload = (seed_text * repeats)[:target_len]
+    text_payload = build_unique_payload(target_len)
 
     fragments = [
         text_payload[i:i + max_data_per_fragment]

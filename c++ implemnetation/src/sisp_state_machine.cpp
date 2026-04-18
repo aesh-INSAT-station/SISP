@@ -27,12 +27,12 @@ static void action_broadcast_failure(Context& ctx, const Packet* pkt);
 static void action_record_foreign_failure(Context& ctx, const Packet* pkt);
 static void action_reset(Context& ctx, const Packet* pkt);
 
-static void transmit_packet(const Packet& pkt, uint8_t dst, const TransportMeta& meta) {
+static void transmit_packet(const Context& ctx, const Packet& pkt, uint8_t dst, const TransportMeta& meta) {
     uint8_t frame[FRAME_SIZE];
     if (Encoder::encode_frame(pkt, meta, frame) != ErrorCode::OK) {
         return;
     }
-    sim_transmit_packet(dst, frame, FRAME_SIZE);
+    sim_transmit_packet_ctx(ctx, dst, frame, FRAME_SIZE);
 }
 
 static Transition g_trans[static_cast<size_t>(State::STATE_COUNT)]
@@ -81,8 +81,8 @@ static void init_transitions() {
     g_trans[s][static_cast<size_t>(Event::SENSOR_READ_DONE)] = { State::IDLE, action_send_correction_rsp };
 
     s = static_cast<size_t>(State::RELAY_WAIT_ACCEPT);
-    g_trans[s][static_cast<size_t>(Event::RX_RELAY_ACCEPT)] = { State::RELAY_SENDING, action_send_frag };
-    g_trans[s][static_cast<size_t>(Event::RX_RELAY_REJECT)] = { State::IDLE, action_send_relay_reject };
+    g_trans[s][static_cast<size_t>(Event::RX_RELAY_ACCEPT)] = { State::RELAY_WAIT_ACK, action_send_frag };
+    g_trans[s][static_cast<size_t>(Event::RX_RELAY_REJECT)] = { State::IDLE, action_idle_nop };
     g_trans[s][static_cast<size_t>(Event::TIMER_EXPIRED)] = { State::RELAY_WAIT_ACCEPT, action_send_relay_req };
 
     s = static_cast<size_t>(State::RELAY_SENDING);
@@ -142,7 +142,7 @@ static void action_idle_nop(Context&, const Packet*) {
 
 static void action_send_correction_req(Context& ctx, const Packet*) {
     ctx.service = ServiceCode::CORRECTION_REQ;
-    ctx.timer_deadline_ms = 5000;
+    ctx.timer_deadline_ms = g_current_time_ms + 5000;
     ctx.rsp_count = 0;
     ctx.rsp_timestamps_ms.fill(0);
 
@@ -171,7 +171,7 @@ static void action_send_correction_req(Context& ctx, const Packet*) {
     TransportMeta meta{};
     meta.datagram_tag = 1;
     meta.hop_limit = 1;
-    transmit_packet(out, BCAST_ADDR, meta);
+    transmit_packet(ctx, out, BCAST_ADDR, meta);
 }
 
 static void action_send_correction_rsp(Context& ctx, const Packet* pkt) {
@@ -196,14 +196,14 @@ static void action_send_correction_rsp(Context& ctx, const Packet* pkt) {
 
     CorrectionRsp rsp{};
     rsp.sensor_type = ctx.last_correction_req.sensor_type;
-    rsp.reading = ctx.last_correction_rsp.reading;
+    rsp.reading = ctx.own_reading;
     serialize_payload(rsp, out.payload.data(), MAX_PAYLOAD, out.payload_len);
 
     TransportMeta meta{};
     meta.session_id = static_cast<uint16_t>(ctx.out_seq);
     meta.ack_seq = pkt->header.seq;
     meta.window = 1;
-    transmit_packet(out, pkt->header.sndr, meta);
+    transmit_packet(ctx, out, pkt->header.sndr, meta);
 }
 
 static void action_collect_rsp(Context& ctx, const Packet* pkt) {
@@ -295,7 +295,7 @@ static void action_send_relay_req(Context& ctx, const Packet*) {
     }
 
     ctx.service = ServiceCode::RELAY_REQ;
-    ctx.timer_deadline_ms = 10000;
+    ctx.timer_deadline_ms = g_current_time_ms + 10000;
     ctx.frag_sent = 0;
     ctx.frag_rcvd_mask = 0;
 
@@ -333,7 +333,7 @@ static void action_send_relay_req(Context& ctx, const Packet*) {
     meta.hop_limit = 8;
     meta.relay_hops_remaining = 3;
     meta.relay_path_id = 1;
-    transmit_packet(out, BCAST_ADDR, meta);
+    transmit_packet(ctx, out, BCAST_ADDR, meta);
 }
 
 static void action_send_relay_accept(Context& ctx, const Packet* pkt) {
@@ -374,7 +374,7 @@ static void action_send_relay_accept(Context& ctx, const Packet* pkt) {
     meta.hop_limit = 8;
     meta.relay_hops_remaining = 3;
     meta.relay_path_id = 1;
-    transmit_packet(out, pkt->header.sndr, meta);
+    transmit_packet(ctx, out, pkt->header.sndr, meta);
 }
 
 static void action_send_relay_reject(Context& ctx, const Packet* pkt) {
@@ -402,7 +402,7 @@ static void action_send_relay_reject(Context& ctx, const Packet* pkt) {
     meta.hop_limit = 8;
     meta.relay_hops_remaining = 1;
     meta.relay_path_id = 1;
-    transmit_packet(out, pkt->header.sndr, meta);
+    transmit_packet(ctx, out, pkt->header.sndr, meta);
 }
 
 static void action_store_frag(Context& ctx, const Packet* pkt) {
@@ -445,40 +445,38 @@ static void action_send_frag(Context& ctx, const Packet* pkt) {
         ctx.frag_total = 1;
     }
 
-    if (ctx.frag_sent >= ctx.frag_total) {
-        return;
+    while (ctx.frag_sent < ctx.frag_total) {
+        uint16_t offset = static_cast<uint16_t>(ctx.frag_sent) * MAX_FRAGMENT_DATA;
+        uint16_t chunk_len = 0;
+        DownlinkData data{};
+        data.fragment_index = ctx.frag_sent;
+        data.fragment_total = ctx.frag_total;
+        if (ctx.relay_buf && ctx.relay_buf_len > 0 && offset < ctx.relay_buf_len) {
+            uint16_t remaining = static_cast<uint16_t>(ctx.relay_buf_len - offset);
+            chunk_len = std::min<uint16_t>(remaining, MAX_FRAGMENT_DATA);
+            std::memcpy(data.data.data(), ctx.relay_buf + offset, chunk_len);
+        }
+        data.data_len = chunk_len;
+
+        Packet out{};
+        out.header.svc = ServiceCode::DOWNLINK_DATA;
+        out.header.sndr = ctx.self_id;
+        out.header.rcvr = ctx.peer_id;
+        out.header.seq = ++ctx.out_seq;
+        ctx.seq = ctx.out_seq;
+        out.header.degr = ctx.current_degr;
+        out.header.flags = static_cast<uint8_t>(FLAG_OFFGRID | FLAG_RELAY);
+        serialize_payload(data, out.payload.data(), MAX_PAYLOAD, out.payload_len);
+
+        TransportMeta meta{};
+        meta.datagram_tag = 6;
+        meta.hop_limit = 8;
+        meta.relay_hops_remaining = 3;
+        meta.relay_path_id = 1;
+        transmit_packet(ctx, out, ctx.peer_id, meta);
+
+        ++ctx.frag_sent;
     }
-
-    uint16_t offset = static_cast<uint16_t>(ctx.frag_sent) * MAX_FRAGMENT_DATA;
-    uint16_t chunk_len = 0;
-    DownlinkData data{};
-    data.fragment_index = ctx.frag_sent;
-    data.fragment_total = ctx.frag_total;
-    if (ctx.relay_buf && ctx.relay_buf_len > 0 && offset < ctx.relay_buf_len) {
-        uint16_t remaining = static_cast<uint16_t>(ctx.relay_buf_len - offset);
-        chunk_len = std::min<uint16_t>(remaining, MAX_FRAGMENT_DATA);
-        std::memcpy(data.data.data(), ctx.relay_buf + offset, chunk_len);
-    }
-    data.data_len = chunk_len;
-
-    Packet out{};
-    out.header.svc = ServiceCode::DOWNLINK_DATA;
-    out.header.sndr = ctx.self_id;
-    out.header.rcvr = ctx.peer_id;
-    out.header.seq = ++ctx.out_seq;
-    ctx.seq = ctx.out_seq;
-    out.header.degr = ctx.current_degr;
-    out.header.flags = static_cast<uint8_t>(FLAG_OFFGRID | FLAG_RELAY);
-    serialize_payload(data, out.payload.data(), MAX_PAYLOAD, out.payload_len);
-
-    TransportMeta meta{};
-    meta.datagram_tag = 6;
-    meta.hop_limit = 8;
-    meta.relay_hops_remaining = 3;
-    meta.relay_path_id = 1;
-    transmit_packet(out, ctx.peer_id, meta);
-
-    ++ctx.frag_sent;
 }
 
 static void action_store_status(Context& ctx, const Packet* pkt) {
@@ -522,7 +520,7 @@ static void action_send_borrow_req(Context& ctx, const Packet*) {
     }
 
     ctx.service = ServiceCode::BORROW_REQ;
-    ctx.timer_deadline_ms = 5000;
+    ctx.timer_deadline_ms = g_current_time_ms + 15000;
 
     if (ctx.borrow_duration_s == 0) {
         ctx.borrow_duration_s = 60;
@@ -546,7 +544,7 @@ static void action_send_borrow_req(Context& ctx, const Packet*) {
     TransportMeta meta{};
     meta.datagram_tag = 9;
     meta.hop_limit = 1;
-    transmit_packet(out, BCAST_ADDR, meta);
+    transmit_packet(ctx, out, BCAST_ADDR, meta);
 }
 
 static void action_receive_borrow_req(Context& ctx, const Packet* pkt) {
@@ -595,7 +593,7 @@ static void action_receive_borrow_req(Context& ctx, const Packet* pkt) {
     TransportMeta meta{};
     meta.datagram_tag = 10;
     meta.hop_limit = 1;
-    transmit_packet(out, out.header.rcvr, meta);
+    transmit_packet(ctx, out, out.header.rcvr, meta);
 }
 
 static void action_store_borrow_decision(Context& ctx, const Packet* pkt) {
@@ -652,7 +650,7 @@ static void action_send_borrow_data(Context& ctx, const Packet* pkt) {
     TransportMeta meta{};
     meta.datagram_tag = 11;
     meta.hop_limit = 1;
-    transmit_packet(out, out.header.rcvr, meta);
+    transmit_packet(ctx, out, out.header.rcvr, meta);
 
     ++ctx.frag_sent;
 }
@@ -680,7 +678,7 @@ static void action_send_ack(Context& ctx, const Packet* pkt) {
     TransportMeta meta{};
     meta.datagram_tag = 8;
     meta.hop_limit = 1;
-    transmit_packet(out, rcvr, meta);
+    transmit_packet(ctx, out, rcvr, meta);
 }
 
 static void action_broadcast_failure(Context& ctx, const Packet*) {
@@ -704,7 +702,7 @@ static void action_broadcast_failure(Context& ctx, const Packet*) {
     TransportMeta meta{};
     meta.datagram_tag = 5;
     meta.hop_limit = 1;
-    transmit_packet(out, BCAST_ADDR, meta);
+    transmit_packet(ctx, out, BCAST_ADDR, meta);
 }
 
 static void action_record_foreign_failure(Context& ctx, const Packet* pkt) {

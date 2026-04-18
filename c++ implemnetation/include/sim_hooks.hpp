@@ -4,6 +4,10 @@
 #include "sisp_state_machine.hpp"
 
 #ifdef __cplusplus
+extern uint32_t g_current_time_ms;
+#endif
+
+#ifdef __cplusplus
 extern "C" {
 #endif
 
@@ -133,6 +137,12 @@ __declspec(dllexport) void sim_advance_time(SISP::Context* ctx, uint32_t ms);
  */
 typedef void (*sim_tx_cb)(uint8_t dst, const uint8_t* buf, uint16_t len);
 __declspec(dllexport) void sim_register_tx_callback(sim_tx_cb cb);
+__declspec(dllexport) void sim_register_tx_callback_for(SISP::Context* ctx, sim_tx_cb cb);
+
+/**
+ * Provide a node-local sensor reading used for CORRECTION_RSP payloads.
+ */
+__declspec(dllexport) void sim_set_own_reading(SISP::Context* ctx, float x, float y, float z, uint32_t ts_ms);
 
 /**
  * Send a frame through the registered callback.
@@ -140,5 +150,6 @@ __declspec(dllexport) void sim_register_tx_callback(sim_tx_cb cb);
 __declspec(dllexport) void sim_transmit_packet(uint8_t dst, const uint8_t* buf, uint16_t len);
 
 #ifdef __cplusplus
+void sim_transmit_packet_ctx(const SISP::Context& ctx, uint8_t dst, const uint8_t* buf, uint16_t len);
 }
 #endif
