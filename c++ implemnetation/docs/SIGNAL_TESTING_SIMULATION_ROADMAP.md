@@ -15,7 +15,7 @@ This document consolidates the physical-layer model from mathsignal.txt into an 
 
 ### 1.2 Path loss
 - Friis equation with distance d and frequency fc
-- Baseline reference: 1000 km at 26 GHz gives approximately 144.8 dB free-space loss
+- Baseline reference: 1000 km at 26 GHz gives approximately 180.7 dB free-space loss
 - Validation rule: doubling distance adds ~6 dB loss
 
 ### 1.3 Doppler
@@ -38,8 +38,9 @@ Compute and log:
 
 ### 2.2 Baseline acceptance
 For baseline settings in mathsignal.txt:
-- SNR and Eb/N0 should be near +17.3 dB at 1000 km with B=Rb=100 kHz
-- At 1 MHz bandwidth, SNR should drop by ~10 dB
+- With high-gain Ka-band antennas (e.g., Gtx=Grx≈23 dBi), Eb/N0 should be near +17.4 dB at 1000 km with B=Rb=100 kHz
+- With low-gain antennas (e.g., 10 dBi at both ends), Eb/N0 at 1000 km is about -8.6 dB (link does not close)
+- If B increases by 10× (e.g., 1 MHz), C/N in that bandwidth drops by ~10 dB, but Eb/N0 remains unchanged for fixed Rb (the B/Rb term cancels)
 
 ## 3) BER and coding simulation stack
 

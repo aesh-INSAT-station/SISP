@@ -40,7 +40,7 @@ $$L_{fs}(\text{dB}) = 20\log_{10}(d) + 20\log_{10}(f_c) + 20\log_{10}\!\left(\fr
 
 Computing term by term at $d = 1000\text{ km}$, $f_c = 26\text{ GHz}$:
 
-$$L_{fs} = \underbrace{20\log_{10}(10^6)}_{=120\text{ dB}} + \underbrace{20\log_{10}(2.6\times10^{10})}_{=194.3\text{ dB}} + \underbrace{20\log_{10}\!\left(\frac{4\pi}{3\times10^8}\right)}_{=-169.5\text{ dB}} = 144.8\text{ dB}$$
+$$L_{fs} = \underbrace{20\log_{10}(10^6)}_{=120\text{ dB}} + \underbrace{20\log_{10}(2.6\times10^{10})}_{=208.3\text{ dB}} + \underbrace{20\log_{10}\!\left(\frac{4\pi}{3\times10^8}\right)}_{=-147.5\text{ dB}} \approx 180.7\text{ dB}$$
 
 The **distance law**: every doubling of $d$ adds $+6$ dB of loss. From $d = 500\text{ km}$ to $d = 2000\text{ km}$, loss increases by $+12$ dB.
 
@@ -84,7 +84,7 @@ For a Ka-band CubeSat receiver: $T_{ant} \approx 30\text{ K}$ (cold sky), $T_{LN
 
 In dBm for $B = 100\text{ kHz}$:
 
-$$N = 10\log_{10}(1.38\times10^{-23} \times 280 \times 10^5) + 30 = -114.1\text{ dBm}$$
+$$N = 10\log_{10}(1.38\times10^{-23} \times 280 \times 10^5) + 30 \approx -124.1\text{ dBm}$$
 
 The **noise spectral density** $N_0 = k_B T_{sys}$ sets the fundamental limit:
 
@@ -103,17 +103,19 @@ For **SISP baseline** ($d = 1000\text{ km}$, $B = 100\text{ kHz}$, $R_b = 100\te
 | Parameter | Value | Notes |
 |---|---|---|
 | $P_{tx}$ | $+30\text{ dBm}$ | 1 W |
-| $G_{tx}$ | $+10\text{ dBi}$ | Patch phased array |
-| $G_{rx}$ | $+10\text{ dBi}$ | Same |
-| $L_{fs}$ | $-144.8\text{ dB}$ | 1000 km, 26 GHz |
-| $L_{point}$ | $-2\text{ dB}$ | Pointing loss estimate |
-| $N$ | $-114.1\text{ dBm}$ | 100 kHz, 280 K |
-| **SNR** | **$+17.3\text{ dB}$** | Comfortable |
-| **$E_b/N_0$** | **$+17.3\text{ dB}$** | $B = R_b$ |
+| $G_{tx}$ | $+23\text{ dBi}$ | Ka-band high-gain (phased array / small dish) |
+| $G_{rx}$ | $+23\text{ dBi}$ | Same |
+| $L_{fs}$ | $180.7\text{ dB}$ | 1000 km, 26 GHz |
+| $L_{point}$ | $2\text{ dB}$ | Pointing loss estimate |
+| $N$ | $-124.1\text{ dBm}$ | 100 kHz, 280 K |
+| **SNR (C/N)** | **$+17.4\text{ dB}$** | computed in $B$ |
+| **$E_b/N_0$** | **$+17.4\text{ dB}$** | $B = R_b$ |
 
-At 1 MHz bandwidth (poor design choice): $N = -114+10 = -104\text{ dBm}$ → SNR drops to $+7.3\text{ dB}$.
+If you instead assume $G_{tx}=G_{rx}=10\text{ dBi}$, the same 1000 km link gives $E_b/N_0 \approx -8.6\text{ dB}$ (i.e., it will not close without either shorter ranges or higher gain/power).
 
-**Key insight**: The choice of $B = 100\text{ kHz}$ (matched to the bit rate) gives a 10 dB advantage over the 1 MHz estimate in the literature review. This is why the link works well.
+At $B = 1\text{ MHz}$, the noise power increases by +10 dB ($N \approx -114.1\text{ dBm}$), so **C/N** drops by 10 dB. However, **$E_b/N_0$ is unchanged** for fixed $R_b$ because the $10\log_{10}(B/R_b)$ term cancels. The safest way to avoid bandwidth-confusion is to compute $C/N_0$ first and then:
+
+$$\frac{E_b}{N_0}(\text{dB}) = \frac{C}{N_0}(\text{dB-Hz}) - 10\log_{10}(R_b)$$
 
 ---
 
@@ -186,17 +188,29 @@ $$\text{PER}(L, p_b) = 1 - (1 - p_b)^L$$
 
 For small $p_b$: $\text{PER} \approx L \cdot p_b$.
 
-SISP packet sizes (after encoding):
+SISP packet sizes (current codebase):
 
-| Message type | Payload (bytes) | Total uncoded bits | Coded bits (×2.29) |
-|---|---|---|---|
-| Header only | 5 | 40 | 92 |
-| CORRECTION_REQ | 5 + 12 = 17 | 136 | 311 |
-| CORRECTION_RSP | 5 + 12 = 17 | 136 | 311 |
-| RELAY_REQ | 5 + 100 = 105 | 840 | 1924 |
-| BORROW_DATA | 5 + 1024 = 1029 | 8232 | 18852 |
+- The protocol header is 5 bytes.
+- Per-service payload lengths are defined by the serializer (`serialize_payload(...)`).
+- The link-layer transport in the C++ implementation uses a **fixed 64-byte frame** (512 uncoded bits) with padding and a frame checksum over the whole frame.
 
-The **minimum viable $E_b/N_0$** is defined as the point where $\text{PER} < 10^{-4}$ for a CORRECTION message (311 coded bits). For the concatenated scheme, this occurs at:
+Useful “header + payload” sizes (before the 64-byte framing):
+
+| Message type | Header + payload (bytes) | Uncoded bits |
+|---|---:|---:|
+| CORRECTION_REQ | $5 + 3 = 8$ | 64 |
+| CORRECTION_RSP | $5 + 17 = 22$ | 176 |
+| RELAY_REQ | $5 + 5 = 10$ | 80 |
+| DOWNLINK_ACK | $5 + 4 = 9$ | 72 |
+| FAILURE | $5 + 3 = 8$ | 64 |
+
+On-air in the current transport framing:
+
+| Item | Bytes | Uncoded bits |
+|---|---:|---:|
+| Fixed transport frame | 64 | 512 |
+
+The **minimum viable $E_b/N_0$** is defined as the point where $\text{PER} < 10^{-4}$ for a correction-scale exchange. For the concatenated scheme, a commonly used engineering target is:
 
 $$\left.\frac{E_b}{N_0}\right\vert_{\text{min viable}} \approx 4.5\text{ dB (concatenated)} \quad \text{vs} \quad 8\text{ dB (uncoded)}$$
 
@@ -204,23 +218,20 @@ $$\left.\frac{E_b}{N_0}\right\vert_{\text{min viable}} \approx 4.5\text{ dB (con
 
 ### 6. Maximum Service Range — The Neighborhood Radius
 
-Inverting the link budget to find $d_{\max}$ given minimum $E_b/N_0$:
+Inverting the link budget to find $d_{\max}$ given minimum $E_b/N_0$ (including a pointing-loss factor $L_{point}$ in linear units):
 
-$$d_{\max} = \frac{c}{4\pi f_c}\sqrt{\frac{P_{tx} G_{tx} G_{rx}}{k_B T_{sys} R_b \cdot (E_b/N_0)_{\min}}}$$
+$$d_{\max} = \frac{c}{4\pi f_c}\sqrt{\frac{P_{tx} G_{tx} G_{rx} \cdot L_{point}}{k_B T_{sys} R_b \cdot (E_b/N_0)_{\min}}}$$
 
-At $(E_b/N_0)_{\min} = 4.5\text{ dB} = 2.82$ (concatenated coding), $R_b = 100\text{ kbps}$:
+Using $P_{tx}=1\text{ W}$ (30 dBm), $f_c=26\text{ GHz}$, $T_{sys}=280\text{ K}$, $R_b=100\text{ kbps}$, $(E_b/N_0)_{\min}=4.5\text{ dB}$, and $L_{point}=10^{-2/10}$:
 
-$$d_{\max} = \frac{3\times10^8}{4\pi\times2.6\times10^{10}}\sqrt{\frac{1 \times 10 \times 10}{1.38\times10^{-23}\times280\times10^5\times2.82}}$$
-
-$$= \frac{3\times10^8}{3.27\times10^{11}}\sqrt{\frac{100}{1.09\times10^{-14}}} = 9.17\times10^{-4}\times\sqrt{9.17\times10^{15}}$$
-
-$$= 9.17\times10^{-4}\times 9.58\times10^7 \approx \mathbf{87{,}900\text{ km}}$$
+- If $G_{tx}=G_{rx}=10\text{ dBi}$, then $d_{\max} \approx 221\text{ km}$.
+- If $G_{tx}=G_{rx}=23\text{ dBi}$, then $d_{\max} \approx 4{,}406\text{ km}$.
 
 This far exceeds LEO constellation spacing — meaning the physical layer is **not the limiting factor** for Service 1. The actual neighborhood radius is determined by **orbital geometry** (visibility windows, shared footprint) from Module M1, not by link budget.
 
-For UHF (437 MHz, $G_{tx} = G_{rx} = 2\text{ dBi}$):
+For UHF (437 MHz, $G_{tx} = G_{rx} = 2\text{ dBi}$) under the same assumptions:
 
-$$d_{\max}^{\text{UHF}} \approx 3{,}200\text{ km}$$
+$$d_{\max}^{\text{UHF}} \approx 2{,}082\text{ km}$$
 
 Still larger than typical LEO neighbor spacing ($\leq 2000\text{ km}$). SISP works on **both** Ka-band and UHF — important resilience property.
 
@@ -236,6 +247,8 @@ The three simulation plots this produces for the paper, directly from the math a
 
 **Plot 2 — SNR vs distance tab**: Shows your Ka-band link budget as a function of range, with the UHF comparison dashed. The intersection with the 4.5 dB threshold is your **maximum service range** for SISP. Try sliding Tx power up to 37 dBm (5W) — the range extends dramatically. That's the "power budget vs neighborhood size" trade-off plot.
 
-**Plot 3 — PER vs distance tab**: Change the message type selector to compare CORRECTION_REQ vs BORROW_DATA. The BORROW_DATA packet (18852 coded bits) degrades PER much faster with distance — this directly motivates the **RELAY service**: large payloads need a relay hop, while small correction messages can traverse longer distances directly.
+**Plot 3 — PER vs distance tab**: Compare a single-frame exchange (e.g., CORRECTION_REQ) versus a multi-frame transfer (e.g., a downlink data set split into fragments). A multi-frame transfer degrades faster with distance because:
+
+$$\text{PER}_{\text{message}} = 1 - (1 - \text{PER}_{\text{frame}})^{N_{\text{frames}}}$$
 
 These three plots, plus the link budget table and the KPI table from the Simulation Plan (Section 10.2 of the lit review), form the complete M3 output.
