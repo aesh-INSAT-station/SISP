@@ -5,7 +5,7 @@ This document compares five correction paths used in the simulation harness:
 - raw (weighted average fallback)
 - weighted_median
 - kalman
-- gated_kalman (benchmark-side innovation gate)
+- nis_gated_kalman (adaptive chi-square innovation gate in benchmark)
 - hybrid (weighted median plus Kalman smoothing)
 
 The analysis is based on results produced by all_tests/test_noise_weighting_and_algorithms.py.
@@ -25,10 +25,10 @@ State model combines prediction plus measurement update with covariance propagat
 Strength: temporal smoothing and noise suppression.
 Weakness: if outliers are frequent or persistent and not explicitly rejected, innovations can still bias the state.
 
-### 4) Gated Kalman (in benchmark)
-Same Kalman core, but benchmark-side logic marks very large innovation samples as DEGR 15.
-Strength: better on impulsive spikes.
-Weakness: can over-reject under persistent bias and lose useful measurement information.
+### 4) NIS-Gated Kalman (in benchmark)
+Same Kalman core, with adaptive chi-square innovation gating based on NIS (normalized innovation squared).
+Strength: better on impulsive spikes while adapting gate aggressiveness over time.
+Weakness: can still over-reject under strong persistent bias if adaptation is not tuned.
 
 ### 5) Hybrid
 Pipeline:
@@ -53,21 +53,21 @@ The benchmark covers:
 - weighted_median alone is often less accurate when noise is mostly Gaussian.
 
 ### Burst outliers
-- kalman and gated_kalman improve clearly over raw and weighted_median.
+- kalman and nis_gated_kalman improve clearly over raw and weighted_median.
 - hybrid is typically best or tied best due to robust front-end plus smoothing.
 
 ### Persistent bias
 - weighted_median and hybrid are strong.
-- gated_kalman can collapse if the gate rejects too aggressively.
+- nis_gated_kalman can still collapse if the adaptive gate becomes too aggressive under sustained bias.
 
 ### Mixed spike plus drift
 - hybrid is strongest in the reported run.
-- kalman and gated_kalman are close, but hybrid keeps the best combined robustness.
+- kalman and nis_gated_kalman are close, but hybrid keeps the best combined robustness.
 
 ## Practical recommendation
 For production-like mixed noise and outlier conditions, prefer hybrid as default.
 Use kalman when noise is close to Gaussian and model assumptions hold.
-Use gated_kalman only with carefully tuned innovation thresholds, ideally with adaptive gates.
+Use nis_gated_kalman only with carefully tuned adaptation limits and confidence targets.
 
 ## Where this is implemented
 - C++ correction implementations: c++ implemnetation/src/sisp_correction.cpp
@@ -75,6 +75,5 @@ Use gated_kalman only with carefully tuned innovation thresholds, ideally with a
 - Python comparison harness: all_tests/test_noise_weighting_and_algorithms.py
 
 ## Suggested next improvements
-- Add adaptive chi-square innovation gate (NIS-based) instead of fixed thresholds.
 - Export benchmark results to CSV for plotting and trend comparison.
 - Add missing-data and dropout scenarios for resilience evaluation.

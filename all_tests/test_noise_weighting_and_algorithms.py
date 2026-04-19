@@ -202,6 +202,16 @@ def innovation_norm(mx, my, mz, px, py, pz):
     return math.sqrt(dx * dx + dy * dy + dz * dz)
 
 
+def nis_3d(mx, my, mz, px, py, pz, sigma):
+    # NIS approximation with isotropic innovation covariance S = sigma^2 * I.
+    # For 3 DoF, this is distributed approximately as chi-square(3) when model assumptions hold.
+    s2 = max(1e-6, sigma * sigma)
+    dx = mx - px
+    dy = my - py
+    dz = mz - pz
+    return (dx * dx + dy * dy + dz * dz) / s2
+
+
 def run_case(algorithm, sigma2, sigma3, rounds, weight_mode, measurements):
     sat1 = lib.sim_create_context(1)
     if not sat1:
@@ -212,7 +222,7 @@ def run_case(algorithm, sigma2, sigma3, rounds, weight_mode, measurements):
             lib.sim_clear_correction_filter(sat1)
         elif algorithm == "weighted_median":
             lib.sim_use_weighted_median_filter(sat1)
-        elif algorithm == "kalman" or algorithm == "gated_kalman":
+        elif algorithm in ("kalman", "nis_gated_kalman"):
             lib.sim_use_kalman_filter(sat1, ctypes.c_float(0.02), ctypes.c_float(0.8))
         elif algorithm == "hybrid":
             lib.sim_use_hybrid_filter(sat1, ctypes.c_float(0.02), ctypes.c_float(0.8))
@@ -228,6 +238,10 @@ def run_case(algorithm, sigma2, sigma3, rounds, weight_mode, measurements):
         corr_ss_acc = 0.0
         ss_count = 0
         pred = None
+        nis_ema_2 = 1.0
+        nis_ema_3 = 1.0
+        # chi-square threshold for 3 DoF at ~99% confidence.
+        chi2_3d_base = 11.345
 
         for r in range(1, rounds + 1):
             lib.sim_inject_event(sat1, EVT_FAULT_DETECTED)
@@ -243,18 +257,24 @@ def run_case(algorithm, sigma2, sigma3, rounds, weight_mode, measurements):
             d2 = degr_from_error(err2, sigma2, weight_mode)
             d3 = degr_from_error(err3, sigma3, weight_mode)
 
-            if algorithm == "gated_kalman" and pred is not None:
+            if algorithm == "nis_gated_kalman" and pred is not None:
                 px, py, pz = pred
-                innov2 = innovation_norm(m2x, m2y, m2z, px, py, pz)
-                innov3 = innovation_norm(m3x, m3y, m3z, px, py, pz)
+                nis2 = nis_3d(m2x, m2y, m2z, px, py, pz, sigma2)
+                nis3 = nis_3d(m3x, m3y, m3z, px, py, pz, sigma3)
 
-                # Soft innovation gate: suspiciously far samples are strongly downweighted.
-                gate2 = max(3.0 * sigma2, 3.0)
-                gate3 = max(3.0 * sigma3, 3.0)
-                if innov2 > gate2:
+                # Adaptive gate: if recent NIS is generally high, loosen threshold; if low, tighten.
+                adapt2 = clamp(nis_ema_2, 0.7, 3.0)
+                adapt3 = clamp(nis_ema_3, 0.7, 3.0)
+                thr2 = chi2_3d_base * adapt2
+                thr3 = chi2_3d_base * adapt3
+
+                if nis2 > thr2:
                     d2 = 15
-                if innov3 > gate3:
+                if nis3 > thr3:
                     d3 = 15
+
+                nis_ema_2 = (0.9 * nis_ema_2) + (0.1 * nis2)
+                nis_ema_3 = (0.9 * nis_ema_3) + (0.1 * nis3)
 
             lib.sim_inject_correction_rsp(sat1, 2, seq2, d2, SENSOR_MAGNETOMETER, m2x, m2y, m2z, ts)
             lib.sim_inject_correction_rsp(sat1, 3, seq3, d3, SENSOR_MAGNETOMETER, m3x, m3y, m3z, ts + 1)
@@ -322,7 +342,7 @@ def print_outlier_table(title, rows):
 
 
 def run_outlier_scenario_matrix(rounds=110):
-    algorithms = ["raw", "weighted_median", "kalman", "gated_kalman", "hybrid"]
+    algorithms = ["raw", "weighted_median", "kalman", "nis_gated_kalman", "hybrid"]
     scenarios = [
         {
             "name": "burst_5pct_heavy",
@@ -438,7 +458,7 @@ def benchmark_runtime_budget(rounds=400, sigma=30.0):
 
 def main():
     sigmas = [2.0, 5.0, 8.0, 12.0, 16.0, 20.0, 30.0, 40.0, 60.0]
-    algorithms = ["raw", "weighted_median", "kalman", "gated_kalman", "hybrid"]
+    algorithms = ["raw", "weighted_median", "kalman", "nis_gated_kalman", "hybrid"]
     rounds = 90
 
     print("=== Noise/Weight/Algorithm Comparison (C++ correction engine) ===")
