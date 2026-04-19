@@ -1,0 +1,8 @@
+# Dependencies for the physical-layer / geometry simulation scripts in this folder.
+# Install with: pip install -r "simulation for signal and physics/requirements.txt"
+
+numpy
+scipy
+matplotlib
+streamlit
+skyfield
