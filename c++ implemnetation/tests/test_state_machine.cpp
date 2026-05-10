@@ -216,6 +216,71 @@ void test_borrow_decision_transition() {
     ASSERT(ctx.borrow_duration_s == 240, "Borrow decision duration stored");
 }
 
+void test_sensor_mask_filters_correction_rsp() {
+    Context ctx{};
+    StateMachine::init_context(ctx, 0x03);
+    StateMachine::dispatch(ctx, Event::FAULT_DETECTED);
+
+    ctx.peer_sensor_mask[0x05] = SENSOR_MASK_SUN_SENSOR;
+
+    CorrectionRsp rsp_payload{};
+    rsp_payload.sensor_type = SensorType::MAGNETOMETER;
+    rsp_payload.reading.x = 99.0f;
+
+    Packet rsp{};
+    rsp.header.svc = ServiceCode::CORRECTION_RSP;
+    rsp.header.sndr = 0x05;
+    rsp.header.rcvr = 0x03;
+    rsp.header.flags = FLAG_OFFGRID;
+    serialize_payload(rsp_payload, rsp.payload.data(), MAX_PAYLOAD, rsp.payload_len);
+
+    StateMachine::dispatch(ctx, Event::RX_CORRECTION_RSP, &rsp);
+    ASSERT(ctx.rsp_count == 0, "Known missing sensor correction response ignored");
+}
+
+void test_borrow_rejects_missing_local_sensor() {
+    Context ctx{};
+    StateMachine::init_context(ctx, 0x03);
+    ctx.local_sensor_mask = SENSOR_MASK_MAGNETOMETER;
+
+    BorrowReq borrow_req{};
+    borrow_req.sensor_type = SensorType::SUN_SENSOR;
+    borrow_req.duration_s = 120;
+    borrow_req.priority = 1;
+
+    Packet borrow_pkt{};
+    borrow_pkt.header.svc = ServiceCode::BORROW_REQ;
+    borrow_pkt.header.sndr = 0x0A;
+    borrow_pkt.header.rcvr = 0x03;
+    borrow_pkt.header.flags = FLAG_OFFGRID;
+    serialize_payload(borrow_req, borrow_pkt.payload.data(), MAX_PAYLOAD, borrow_pkt.payload_len);
+
+    StateMachine::dispatch(ctx, Event::RX_BORROW_REQ, &borrow_pkt);
+    ASSERT(ctx.last_borrow_decision.accepted == 0, "Borrow request rejected when local sensor is unavailable");
+}
+
+void test_bulk_phy_after_relay_accept_with_capability() {
+    Context ctx{};
+    StateMachine::init_context(ctx, 0x03);
+    ctx.state = State::RELAY_WAIT_ACCEPT;
+    ctx.peer_phy_cap_mask[0x0A] = PHY_CAP_DEFAULT;
+    ctx.frag_total = 1;
+
+    RelayDecision decision{};
+    decision.accepted = 1;
+
+    Packet accept_pkt{};
+    accept_pkt.header.svc = ServiceCode::RELAY_ACCEPT;
+    accept_pkt.header.sndr = 0x0A;
+    accept_pkt.header.rcvr = 0x03;
+    accept_pkt.header.flags = FLAG_OFFGRID;
+    serialize_payload(decision, accept_pkt.payload.data(), MAX_PAYLOAD, accept_pkt.payload_len);
+
+    StateMachine::dispatch(ctx, Event::RX_RELAY_ACCEPT, &accept_pkt);
+    ASSERT(ctx.active_bulk_phy == PhyProfile::BULK_437_WIDE, "Relay accept selects wide bulk PHY when peer advertises support");
+    ASSERT(ctx.last_tx_phy == PhyProfile::BULK_437_WIDE, "Relay data transmits on wide bulk PHY after accept");
+}
+
 void test_full_message_recovery_out_of_order_fragments() {
     Context ctx{};
     StateMachine::init_context(ctx, 0x03);
@@ -277,6 +342,9 @@ int test_state_machine() {
     test_relay_provider_side();
     test_borrow_transition();
     test_borrow_decision_transition();
+    test_sensor_mask_filters_correction_rsp();
+    test_borrow_rejects_missing_local_sensor();
+    test_bulk_phy_after_relay_accept_with_capability();
     test_full_message_recovery_out_of_order_fragments();
 
     std::cout << "State Machine: " << g_passed_count << "/" << g_test_count << std::endl;

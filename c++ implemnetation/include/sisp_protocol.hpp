@@ -54,6 +54,25 @@ enum class SensorType : uint8_t {
     OPTICAL = 0x06,           // radiance, W/m2/sr
 };
 
+enum class PhyProfile : uint8_t {
+    CONTROL_437_NARROW = 0x00,  // 10/12.5 kHz-class always-on control PHY
+    BULK_437_WIDE = 0x01,       // 20/25 kHz-class emergency/bulk PHY
+};
+
+static constexpr uint8_t PHY_CAP_CONTROL_437_NARROW = (1 << 0);
+static constexpr uint8_t PHY_CAP_BULK_437_WIDE = (1 << 1);
+static constexpr uint8_t PHY_CAP_DEFAULT = PHY_CAP_CONTROL_437_NARROW | PHY_CAP_BULK_437_WIDE;
+
+static constexpr uint8_t SENSOR_MASK_MAGNETOMETER = (1 << 0);
+static constexpr uint8_t SENSOR_MASK_SUN_SENSOR = (1 << 1);
+static constexpr uint8_t SENSOR_MASK_GYROSCOPE = (1 << 2);
+static constexpr uint8_t SENSOR_MASK_STAR_TRACKER = (1 << 3);
+static constexpr uint8_t SENSOR_MASK_THERMAL = (1 << 4);
+static constexpr uint8_t SENSOR_MASK_OPTICAL = (1 << 5);
+static constexpr uint8_t SENSOR_MASK_ALL = SENSOR_MASK_MAGNETOMETER | SENSOR_MASK_SUN_SENSOR |
+                                           SENSOR_MASK_GYROSCOPE | SENSOR_MASK_STAR_TRACKER |
+                                           SENSOR_MASK_THERMAL | SENSOR_MASK_OPTICAL;
+
 /* ■■ FLAGS nibble bits ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ */
 static constexpr uint8_t FLAG_OFFGRID = (1 << 3);  // 1=cross-op/public
 static constexpr uint8_t FLAG_PROTO = (1 << 2);    // 1=TCP-like, ACK reqd
@@ -166,6 +185,7 @@ struct Status {
     uint16_t ground_vis_s;  // seconds until next GS pass
     uint8_t sensor_mask;    // bitmask: bit=1 means healthy
     uint32_t uptime_s;
+    uint8_t phy_cap_mask;   // bitmask of supported PhyProfile values
 };
 
 /* ■■ Full Packet Structure ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ */
@@ -202,10 +222,13 @@ struct TransportMeta {
     uint8_t relay_hops_remaining;   // relay extension
     uint8_t relay_path_id;          // relay path identifier
     uint16_t tmax_deadline_ds;      // time critical deadline in deciseconds
+    PhyProfile phy_profile;         // PHY used for this frame
+    uint8_t phy_cap_mask;           // advertised local PHY support
 
     TransportMeta()
         : session_id(0), ack_seq(0), window(0), datagram_tag(0), hop_limit(0),
-          relay_hops_remaining(0), relay_path_id(0), tmax_deadline_ds(0) {}
+          relay_hops_remaining(0), relay_path_id(0), tmax_deadline_ds(0),
+          phy_profile(PhyProfile::CONTROL_437_NARROW), phy_cap_mask(PHY_CAP_DEFAULT) {}
 };
 
 struct FrameInfo {
@@ -232,6 +255,8 @@ uint8_t compute_crc8_maxim(const uint8_t* data, size_t len);
 uint8_t compute_frame_checksum(const uint8_t* data, size_t len_without_checksum);
 uint16_t compute_frame_extension_len(uint8_t flags);
 uint16_t compute_frame_payload_capacity(uint8_t flags);
+uint8_t sensor_mask_for(SensorType sensor);
+uint8_t phy_cap_for(PhyProfile phy);
 
 // Typed payload serialization helpers
 ErrorCode serialize_payload(const CorrectionReq& src, uint8_t* out, uint16_t capacity, uint16_t& out_len);

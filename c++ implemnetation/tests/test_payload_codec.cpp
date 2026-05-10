@@ -125,11 +125,12 @@ static void test_status_and_heartbeat_codec() {
     status.ground_vis_s = 120;
     status.sensor_mask = 0x3F;
     status.uptime_s = 654321;
+    status.phy_cap_mask = PHY_CAP_DEFAULT;
 
     uint8_t buf[MAX_PAYLOAD];
     uint16_t len = 0;
     ASSERT(serialize_payload(status, buf, MAX_PAYLOAD, len) == ErrorCode::OK, "Serialize Status");
-    ASSERT(len == 8, "Status size is 8 bytes");
+    ASSERT(len == 9, "Status size is 9 bytes");
 
     Status status_out{};
     ASSERT(deserialize_payload(buf, len, status_out) == ErrorCode::OK, "Deserialize Status");
@@ -137,6 +138,7 @@ static void test_status_and_heartbeat_codec() {
     ASSERT(status_out.ground_vis_s == status.ground_vis_s, "Status visibility roundtrip");
     ASSERT(status_out.sensor_mask == status.sensor_mask, "Status mask roundtrip");
     ASSERT(status_out.uptime_s == status.uptime_s, "Status uptime roundtrip");
+    ASSERT(status_out.phy_cap_mask == status.phy_cap_mask, "Status PHY capability roundtrip");
 
     Heartbeat heartbeat{};
     heartbeat.energy_pct = 45;

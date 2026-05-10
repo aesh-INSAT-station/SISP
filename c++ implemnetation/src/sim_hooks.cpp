@@ -114,11 +114,13 @@ void sim_inject_packet(Context* ctx, const uint8_t* buf, uint16_t len) {
 
     Packet pkt{};
     ErrorCode err = ErrorCode::ERR_LEN;
+    FrameInfo info{};
     if (len == FRAME_SIZE) {
-        FrameInfo info{};
         err = Decoder::decode_frame(buf, pkt, info);
     } else {
         err = Decoder::decode(buf, len, pkt);
+        info.transport.phy_cap_mask = PHY_CAP_CONTROL_437_NARROW;
+        info.transport.phy_profile = PhyProfile::CONTROL_437_NARROW;
     }
     if (err != ErrorCode::OK) {
         return;  // Silently drop invalid packets
@@ -134,6 +136,9 @@ void sim_inject_packet(Context* ctx, const uint8_t* buf, uint16_t len) {
     ctx->neighbour_degr[peer] = pkt.header.degr;
     ctx->neighbour_last_seen[peer] = g_current_time_ms;
     ctx->peer_friendly[peer] = 1U;
+    if (info.transport.phy_cap_mask != 0U) {
+        ctx->peer_phy_cap_mask[peer] = info.transport.phy_cap_mask;
+    }
 
     // Map service code to event
     Event evt;
