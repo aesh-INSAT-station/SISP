@@ -110,6 +110,12 @@ struct Context {
     std::array<uint8_t, 256> peer_friendly;         // 1=trusted/friendly, 0=unknown/untrusted
     std::array<uint8_t, 256> peer_sensor_mask;      // latest advertised sensor health bitmask
     std::array<uint8_t, 256> peer_energy_pct;       // latest advertised energy percentage
+    std::array<uint8_t, 256> peer_phy_cap_mask;     // latest advertised PHY capabilities
+    uint8_t local_sensor_mask;                      // local healthy sensor bitmask
+    uint8_t local_phy_cap_mask;                     // local supported PHY profiles
+    PhyProfile current_phy;                         // selected PHY for ordinary traffic
+    PhyProfile active_bulk_phy;                     // selected PHY for accepted bulk transfer
+    PhyProfile last_tx_phy;                         // most recent transmitted PHY, for tests/sim
     
     // Correction-specific
     std::array<std::array<float, 3>, 8> rsp_readings;  // up to 8 neighbours
@@ -155,6 +161,9 @@ struct Context {
                 : state(State::IDLE), self_id(0), peer_id(0), seq(0), out_seq(0), current_degr(0),
           service(ServiceCode::CORRECTION_REQ),
           timer_deadline_ms(0), retry_count(0), max_retries(3),
+          local_sensor_mask(SENSOR_MASK_ALL), local_phy_cap_mask(PHY_CAP_DEFAULT),
+          current_phy(PhyProfile::CONTROL_437_NARROW), active_bulk_phy(PhyProfile::CONTROL_437_NARROW),
+          last_tx_phy(PhyProfile::CONTROL_437_NARROW),
           rsp_count(0), correction_filter(nullptr), relay_tx_len(0), relay_rx_len(0), relay_buf(nullptr), relay_buf_len(0),
           frag_total(0), frag_sent(0), frag_rcvd_mask(0),
           borrow_sensor(SensorType::MAGNETOMETER), borrow_duration_s(0) {
@@ -166,6 +175,7 @@ struct Context {
             peer_friendly.fill(0);
             peer_sensor_mask.fill(0);
             peer_energy_pct.fill(0);
+            peer_phy_cap_mask.fill(0);
         rsp_readings.fill({});
         rsp_timestamps_ms.fill(0);
         rsp_weights.fill(0.0f);

@@ -1,0 +1,339 @@
+Start testing: May 10 16:03 Paris, Madrid
+----------------------------------------------------------
+1/1 Testing: SISPTests
+1/1 Test: SISPTests
+Command: "C:/Users/HP/aesh/SISP/c++ implemnetation/build/Release/test_runner.exe"
+Directory: C:/Users/HP/aesh/SISP/c++ implemnetation/build
+"SISPTests" start time: May 10 16:03 Paris, Madrid
+Output:
+----------------------------------------------------------
+===== SISP Protocol Unit Tests =====
+
+
+--- Encoder/Decoder Tests ---
+PASS: Encode returns OK
+PASS: Encoded length correct (no security prefix)
+PASS: Decode returns OK
+PASS: SVC roundtrip
+PASS: SNDR roundtrip
+PASS: RCVR roundtrip
+PASS: DEGR roundtrip
+PASS: Payload[0] roundtrip
+PASS: Encode valid packet
+PASS: Corrupted checksum detected
+PASS: Encode fixed frame for frame checksum test
+PASS: Decode valid fixed frame before corruption
+PASS: Corrupted fixed-frame checksum detected
+PASS: Encode frame A for continuation-path test
+PASS: Corrupted frame A rejected before continuation test
+PASS: Encode frame B for continuation-path test
+PASS: Valid frame B accepted immediately after corrupted frame drop
+PASS: Recovered decode service is HEARTBEAT
+PASS: Recovered decode uses the valid continuation frame sequence
+PASS: is_broadcast() returns true for 0xFF
+PASS: is_broadcast() returns false for non-0xFF
+PASS: is_for_me() returns true for broadcast
+PASS: is_for_me() returns true for matching receiver
+PASS: is_for_me() returns false for non-matching receiver
+PASS: Encode response with float payload
+PASS: Response packet length includes floats
+PASS: Decode response packet
+PASS: Float payload[0] roundtrip
+PASS: Float payload[1] roundtrip
+PASS: Float payload[2] roundtrip
+PASS: Timestamp roundtrip
+PASS: Encode SVC=0
+PASS: Decode SVC=0
+PASS: SVC roundtrip for code 0
+PASS: Encode SVC=1
+PASS: Decode SVC=1
+PASS: SVC roundtrip for code 1
+PASS: Encode SVC=2
+PASS: Decode SVC=2
+PASS: SVC roundtrip for code 2
+PASS: Encode SVC=3
+PASS: Decode SVC=3
+PASS: SVC roundtrip for code 3
+PASS: Encode SVC=4
+PASS: Decode SVC=4
+PASS: SVC roundtrip for code 4
+PASS: Encode SVC=5
+PASS: Decode SVC=5
+PASS: SVC roundtrip for code 5
+PASS: Encode SVC=6
+PASS: Decode SVC=6
+PASS: SVC roundtrip for code 6
+PASS: Encode SVC=7
+PASS: Decode SVC=7
+PASS: SVC roundtrip for code 7
+PASS: Encode SVC=8
+PASS: Decode SVC=8
+PASS: SVC roundtrip for code 8
+PASS: Encode SVC=9
+PASS: Decode SVC=9
+PASS: SVC roundtrip for code 9
+PASS: Encode SVC=10
+PASS: Decode SVC=10
+PASS: SVC roundtrip for code 10
+PASS: Encode SVC=14
+PASS: Decode SVC=14
+PASS: SVC roundtrip for code 14
+PASS: Encode SVC=15
+PASS: Decode SVC=15
+PASS: SVC roundtrip for code 15
+Encode/Decode: 70/70
+
+--- Payload Codec Tests ---
+PASS: Serialize CorrectionReq
+PASS: CorrectionReq size is 3 bytes
+PASS: Deserialize CorrectionReq
+PASS: CorrectionReq sensor type roundtrip
+PASS: CorrectionReq window roundtrip
+PASS: Serialize CorrectionRsp
+PASS: CorrectionRsp size is 17 bytes
+PASS: Deserialize CorrectionRsp
+PASS: CorrectionRsp sensor type roundtrip
+PASS: CorrectionRsp x roundtrip
+PASS: CorrectionRsp y roundtrip
+PASS: CorrectionRsp z roundtrip
+PASS: CorrectionRsp timestamp roundtrip
+PASS: Serialize RelayReq
+PASS: RelayReq size is 5 bytes
+PASS: Deserialize RelayReq
+PASS: RelayReq hop count roundtrip
+PASS: RelayReq fragment count roundtrip
+PASS: RelayReq window roundtrip
+PASS: Serialize RelayDecision
+PASS: RelayDecision size is 2 bytes
+PASS: Deserialize RelayDecision
+PASS: RelayDecision accepted roundtrip
+PASS: RelayDecision reason roundtrip
+PASS: Serialize DownlinkData
+PASS: DownlinkData size is envelope plus data
+PASS: Deserialize DownlinkData
+PASS: DownlinkData fragment index roundtrip
+PASS: DownlinkData fragment total roundtrip
+PASS: DownlinkData data length roundtrip
+PASS: DownlinkData bytes roundtrip
+PASS: Serialize DownlinkAck
+PASS: DownlinkAck size is 4 bytes
+PASS: Deserialize DownlinkAck
+PASS: DownlinkAck crc32 roundtrip
+PASS: Serialize Status
+PASS: Status size is 8 bytes
+PASS: Deserialize Status
+PASS: Status energy roundtrip
+PASS: Status visibility roundtrip
+PASS: Status mask roundtrip
+PASS: Status uptime roundtrip
+PASS: Serialize Heartbeat
+PASS: Heartbeat size is 6 bytes
+PASS: Deserialize Heartbeat
+PASS: Heartbeat energy roundtrip
+PASS: Heartbeat degr roundtrip
+PASS: Heartbeat uptime roundtrip
+PASS: Serialize Failure
+PASS: Failure size is 3 bytes
+PASS: Deserialize Failure
+PASS: Failure code roundtrip
+PASS: Failure detail roundtrip
+PASS: Failure degr roundtrip
+PASS: Serialize BorrowReq
+PASS: BorrowReq size is 4 bytes
+PASS: Deserialize BorrowReq
+PASS: BorrowReq sensor roundtrip
+PASS: BorrowReq duration roundtrip
+PASS: BorrowReq priority roundtrip
+PASS: Serialize BorrowDecision
+PASS: BorrowDecision size is 3 bytes
+PASS: Deserialize BorrowDecision
+PASS: BorrowDecision accepted roundtrip
+PASS: BorrowDecision duration roundtrip
+Payload Codec: 65/65
+
+--- 512-bit Frame Pipeline Tests ---
+PASS: Encode 512-bit frame in TCP-like mode
+PASS: Decode 512-bit frame in TCP-like mode
+PASS: Frame SVC roundtrip
+PASS: Frame SEQ roundtrip
+PASS: Frame payload length roundtrip
+PASS: TCP session_id parsed
+PASS: TCP ack_seq parsed
+PASS: TCP window parsed
+PASS: TMAX extension parsed
+PASS: Encode 512-bit frame in UDP-like relay mode
+PASS: Decode 512-bit frame in UDP-like relay mode
+PASS: UDP datagram_tag parsed
+PASS: UDP hop_limit parsed
+PASS: Relay hops parsed
+PASS: Relay path parsed
+PASS: Multithread pipeline consumed all frames
+PASS: Multithread pipeline decoded all frames
+PASS: Multithread pipeline heartbeat count correct
+PASS: Multithread pipeline status count correct
+PASS: Receiver heartbeat state updated by real traffic
+PASS: Receiver status state updated by real traffic
+Frame Pipeline: 21/21
+
+--- State Machine Tests ---
+PASS: Initial state is IDLE
+PASS: Fault detected → CORR_WAIT_RSP
+PASS: Received first response → CORR_COLLECTING
+PASS: Collecting second response
+PASS: Timer expired → CORR_COMPUTING
+PASS: Correction done → IDLE
+PASS: Collected 2 responses
+PASS: Last correction response parsed
+PASS: Correction response timestamp buffered
+PASS: Sent CORRECTION_REQ
+PASS: Timer expired, no responses → CORR_COMPUTING
+PASS: Return to IDLE
+PASS: Now in CORR_WAIT_RSP
+PASS: HEARTBEAT doesn't change state
+PASS: Heartbeat payload parsed
+PASS: In CORR_WAIT_RSP
+PASS: RESET → IDLE
+PASS: Timer cleared
+PASS: Response count cleared
+PASS: Start in IDLE
+PASS: Energy low → RELAY_WAIT_ACCEPT
+PASS: 10s relay timeout set
+PASS: Relay request moves to provider side
+PASS: Relay request parsed
+PASS: Borrow request enters sampling state
+PASS: Borrow request parsed
+PASS: Borrow requester peer tracked
+PASS: Borrow decision prepared on request receipt
+PASS: Borrow decision moves requester to receiving state
+PASS: Borrow decision parsed
+PASS: Borrow decision duration stored
+PASS: Out-of-order fragment processing keeps BORROW_RECEIVING state
+PASS: Out-of-order fragment processing keeps BORROW_RECEIVING state
+PASS: Out-of-order fragment processing keeps BORROW_RECEIVING state
+PASS: Out-of-order fragment processing keeps BORROW_RECEIVING state
+PASS: Fragment bitmask tracks all required fragments despite out-of-order delivery
+PASS: Recovered message length matches full multi-fragment payload
+PASS: Recovered message bytes match expected payload after sequencing recovery
+State Machine: 38/38
+
+--- DEGR Computation Tests ---
+PASS: Healthy satellite → DEGR=0
+PASS: Worst case → DEGR=15
+PASS: Intermediate degradation
+  Intermediate DEGR=5
+PASS: DEGR=0 for k=1.0
+PASS: k deviation increases DEGR
+PASS: k deviation=0.25 maps to score 2
+PASS: k deviation >= 0.5 maps to score 5
+PASS: SVD residual increases DEGR
+PASS: SVD residual=0.5 maps to bucket score 3
+PASS: SVD residual=1.0 → score 5
+PASS: DEGR=0 for fresh satellite
+PASS: Age score is non-decreasing
+PASS: Age score remains non-decreasing
+PASS: Age >= 3 years → score 3
+PASS: DEGR=0 for nominal orbit
+PASS: Orbit score is non-decreasing below threshold
+PASS: Orbit score grows with error
+PASS: Orbit error >= 500m → score 2
+PASS: DEGR clamped to 15
+PASS: DEGR clamped to 0
+DEGR Computation: 20/20
+
+--- Protocol Simulation Tests ---
+
+--- Protocol Simulation Suite ---
+
+PASS: Single-node: Start in IDLE
+PASS: Single-node: Fault triggers correction request
+PASS: Single-node: Collected 2 correction responses
+PASS: Single-node: Timer expired triggers computation
+PASS: Single-node: Correction done returns to IDLE
+PASS: Single-node: Correction filter produced result
+PASS: Relay: Requester starts in IDLE
+PASS: Relay: Provider starts in IDLE
+PASS: Relay: Energy low transitions to RELAY_WAIT_ACCEPT
+PASS: Relay: Provider transitions to RELAY_RECEIVING
+PASS: Relay: Provider stores relay request details
+PASS: Heartbeat: Listener1 receives heartbeat
+PASS: Heartbeat: Listener2 receives heartbeat
+PASS: Heartbeat: Uptime preserved
+PASS: Plugin: No filter initially
+PASS: Plugin: Filter can be set dynamically
+PASS: Plugin: Different filters for different nodes
+PASS: Plugin: Node1 with median filter works
+PASS: Plugin: Node2 with Kalman filter works
+PASS: Error: Valid heartbeat frame encoded
+PASS: Error: Corrupted frame rejected
+PASS: Error: Valid frame accepted after corrupted frame drop
+PASS: Reset: Can reach CORR_WAIT_RSP state
+PASS: Reset: Escape to IDLE from any state
+PASS: Reset: Clears response collection state
+
+Protocol Simulation: 25/25
+
+--- Comprehensive State Machine Tests (Level 2 Matrix) ---
+
+========== LEVEL 2: STATE MACHINE TESTS ==========
+
+SM-01: Correction Happy Path...
+PASS: SM-01: Fault → CORR_WAIT_RSP
+PASS: SM-01: After 2 RSPs → CORR_COLLECTING
+PASS: SM-01: Collected 2 responses
+PASS: SM-01: Timer → CORR_COMPUTING
+SM-02: No Neighbours Timeout...
+PASS: SM-02: Enter wait state
+PASS: SM-02: Timeout → CORR_COMPUTING even with 0 responses
+PASS: SM-02: rsp_count remains 0
+PASS: SM-02: Correction is zero (no inputs)
+SM-03: DEGR Weight Verification...
+PASS: SM-03: Healthy DEGR=0 has higher weight than DEGR=14
+PASS: SM-03: Poor health weight is very low (clamped at 0.05)
+PASS: SM-03: Corrected value dominated by healthy satellite
+SM-04: Relay Sender Path...
+PASS: SM-04: Start IDLE
+PASS: SM-04: Energy low → RELAY_WAIT_ACCEPT
+PASS: SM-04: Timer set to 10s
+SM-05: Relay Reject Fallback...
+PASS: SM-05: Enter relay wait
+PASS: SM-05: Reject → IDLE (fallback)
+SM-06: Relay Receiver Fragments...
+PASS: SM-06: RX_RELAY_REQ → RELAY_RECEIVING
+PASS: SM-06: Fragment count stored
+PASS: SM-06: After fragments → RELAY_STORING
+PASS: SM-06: Fragment mask has bits set
+SM-07: Critical Failure...
+PASS: SM-07: In CORR_WAIT_RSP
+PASS: SM-07: Any state + CRITICAL_FAILURE → CRITICAL_FAIL
+SM-08: Duplicate SEQ Drop...
+PASS: SM-08: First response collected
+PASS: SM-08: Second response from different sender collected
+SM-09: SEQ Counter Increments...
+PASS: SM-09: SEQ incremented on FAULT_DETECTED
+SM-10: Borrow Provider...
+PASS: SM-10: RX_BORROW_REQ → BORROW_SAMPLING
+PASS: SM-10: Sensor type stored
+PASS: SM-10: Duration stored
+SM-11: HEARTBEAT Keeps State...
+PASS: SM-11: HEARTBEAT doesn't change state
+PASS: SM-11: Heartbeat payload stored
+SM-12: RESET Preserves ID...
+PASS: SM-12: RESET → IDLE
+PASS: SM-12: self_id preserved
+PASS: SM-12: rsp_count cleared
+PASS: SM-12: Internal state cleared
+
+Level 2 (State Machine): 34/34
+
+===== Summary =====
+Executed tests: 273
+Failed groups: 0
+<end of output>
+Test time =   0.02 sec
+----------------------------------------------------------
+Test Passed.
+"SISPTests" end time: May 10 16:03 Paris, Madrid
+"SISPTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: May 10 16:03 Paris, Madrid

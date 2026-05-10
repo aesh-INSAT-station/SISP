@@ -97,6 +97,10 @@ ErrorCode Encoder::encode_frame(const Packet& pkt,
 
     uint16_t cursor = 8;
 
+    out_frame[cursor + 0] = static_cast<uint8_t>(meta.phy_profile);
+    out_frame[cursor + 1] = meta.phy_cap_mask;
+    cursor += 2;
+
     // Transport extension depends on PROTO bit.
     if (pkt.header.flags & FLAG_PROTO) {
         out_frame[cursor + 0] = static_cast<uint8_t>((meta.session_id >> 8) & 0xFF);

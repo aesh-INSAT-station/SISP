@@ -27,9 +27,40 @@ static void action_broadcast_failure(Context& ctx, const Packet* pkt);
 static void action_record_foreign_failure(Context& ctx, const Packet* pkt);
 static void action_reset(Context& ctx, const Packet* pkt);
 
-static void transmit_packet(const Context& ctx, const Packet& pkt, uint8_t dst, const TransportMeta& meta) {
+static bool sensor_known_missing(const Context& ctx, uint8_t peer, SensorType sensor) {
+    const uint8_t mask = ctx.peer_sensor_mask[peer];
+    return mask != 0U && (mask & sensor_mask_for(sensor)) == 0U;
+}
+
+static bool peer_supports_phy(const Context& ctx, uint8_t peer, PhyProfile phy) {
+    const uint8_t mask = ctx.peer_phy_cap_mask[peer];
+    return mask != 0U && (mask & phy_cap_for(phy)) != 0U;
+}
+
+static PhyProfile select_tx_phy(const Context& ctx, const Packet& pkt, uint8_t dst) {
+    const bool bulk_service = pkt.header.svc == ServiceCode::DOWNLINK_DATA ||
+                              pkt.header.svc == ServiceCode::DOWNLINK_ACK;
+    if (!bulk_service || dst == BCAST_ADDR) {
+        return PhyProfile::CONTROL_437_NARROW;
+    }
+
+    if ((ctx.local_phy_cap_mask & PHY_CAP_BULK_437_WIDE) != 0U &&
+        ctx.active_bulk_phy == PhyProfile::BULK_437_WIDE &&
+        peer_supports_phy(ctx, dst, PhyProfile::BULK_437_WIDE)) {
+        return PhyProfile::BULK_437_WIDE;
+    }
+
+    return PhyProfile::CONTROL_437_NARROW;
+}
+
+static void transmit_packet(Context& ctx, const Packet& pkt, uint8_t dst, const TransportMeta& meta) {
+    TransportMeta tx_meta = meta;
+    tx_meta.phy_profile = select_tx_phy(ctx, pkt, dst);
+    tx_meta.phy_cap_mask = ctx.local_phy_cap_mask;
+    ctx.last_tx_phy = tx_meta.phy_profile;
+
     uint8_t frame[FRAME_SIZE];
-    if (Encoder::encode_frame(pkt, meta, frame) != ErrorCode::OK) {
+    if (Encoder::encode_frame(pkt, tx_meta, frame) != ErrorCode::OK) {
         return;
     }
     sim_transmit_packet_ctx(ctx, dst, frame, FRAME_SIZE);
@@ -81,7 +112,7 @@ static void init_transitions() {
     g_trans[s][static_cast<size_t>(Event::SENSOR_READ_DONE)] = { State::IDLE, action_send_correction_rsp };
 
     s = static_cast<size_t>(State::RELAY_WAIT_ACCEPT);
-    g_trans[s][static_cast<size_t>(Event::RX_RELAY_ACCEPT)] = { State::RELAY_WAIT_ACK, action_send_frag };
+    g_trans[s][static_cast<size_t>(Event::RX_RELAY_ACCEPT)] = { State::RELAY_SENDING, action_send_frag };
     g_trans[s][static_cast<size_t>(Event::RX_RELAY_REJECT)] = { State::IDLE, action_idle_nop };
     g_trans[s][static_cast<size_t>(Event::TIMER_EXPIRED)] = { State::RELAY_WAIT_ACCEPT, action_send_relay_req };
 
@@ -221,6 +252,9 @@ static void action_collect_rsp(Context& ctx, const Packet* pkt) {
     if (rsp.sensor_type != ctx.last_correction_req.sensor_type) {
         return;
     }
+    if (sensor_known_missing(ctx, pkt->header.sndr, rsp.sensor_type)) {
+        return;
+    }
 
     ctx.last_correction_rsp = rsp;
     ctx.rsp_readings[ctx.rsp_count][0] = rsp.reading.x;
@@ -341,6 +375,9 @@ static void action_send_relay_accept(Context& ctx, const Packet* pkt) {
         return;
     }
     ctx.peer_id = pkt->header.sndr;
+    ctx.active_bulk_phy = peer_supports_phy(ctx, ctx.peer_id, PhyProfile::BULK_437_WIDE)
+                              ? PhyProfile::BULK_437_WIDE
+                              : PhyProfile::CONTROL_437_NARROW;
 
     RelayReq req{};
     if (deserialize_payload(pkt->payload.data(), pkt->payload_len, req) == ErrorCode::OK) {
@@ -435,6 +472,9 @@ static void action_send_frag(Context& ctx, const Packet* pkt) {
     if (pkt) {
         ctx.peer_id = pkt->header.sndr;
         ctx.retry_count = 0;
+        ctx.active_bulk_phy = peer_supports_phy(ctx, ctx.peer_id, PhyProfile::BULK_437_WIDE)
+                                  ? PhyProfile::BULK_437_WIDE
+                                  : PhyProfile::CONTROL_437_NARROW;
     }
 
     if (ctx.peer_id == 0) {
@@ -490,6 +530,7 @@ static void action_store_status(Context& ctx, const Packet* pkt) {
         ctx.peer_friendly[peer] = 1U;
         ctx.peer_sensor_mask[peer] = status.sensor_mask;
         ctx.peer_energy_pct[peer] = status.energy_pct;
+        ctx.peer_phy_cap_mask[peer] = status.phy_cap_mask;
     }
 }
 
@@ -503,6 +544,9 @@ static void action_store_heartbeat(Context& ctx, const Packet* pkt) {
         const uint8_t peer = pkt->header.sndr;
         ctx.peer_friendly[peer] = 1U;
         ctx.peer_energy_pct[peer] = heartbeat.energy_pct;
+        if (ctx.peer_phy_cap_mask[peer] == 0U) {
+            ctx.peer_phy_cap_mask[peer] = PHY_CAP_CONTROL_437_NARROW;
+        }
     }
 }
 
@@ -585,7 +629,7 @@ static void action_receive_borrow_req(Context& ctx, const Packet* pkt) {
     out.header.flags = FLAG_OFFGRID;
 
     BorrowDecision decision{};
-    decision.accepted = 1;
+    decision.accepted = ((ctx.local_sensor_mask & sensor_mask_for(ctx.borrow_sensor)) != 0U) ? 1U : 0U;
     decision.duration_s = ctx.borrow_duration_s;
     ctx.last_borrow_decision = decision;
     serialize_payload(decision, out.payload.data(), MAX_PAYLOAD, out.payload_len);
@@ -609,6 +653,11 @@ static void action_store_borrow_decision(Context& ctx, const Packet* pkt) {
     ctx.peer_id = pkt->header.sndr;
     ctx.retry_count = 0;
     ctx.last_borrow_decision = decision;
+    if (decision.accepted != 0U && peer_supports_phy(ctx, ctx.peer_id, PhyProfile::BULK_437_WIDE)) {
+        ctx.active_bulk_phy = PhyProfile::BULK_437_WIDE;
+    } else {
+        ctx.active_bulk_phy = PhyProfile::CONTROL_437_NARROW;
+    }
     if (decision.duration_s > 0) {
         ctx.borrow_duration_s = decision.duration_s;
     }

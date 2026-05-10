@@ -69,6 +69,8 @@ static void test_fixed_frame_tcp_mode() {
     tx_meta.ack_seq = 8;
     tx_meta.window = 32;
     tx_meta.tmax_deadline_ds = 900;
+    tx_meta.phy_profile = PhyProfile::CONTROL_437_NARROW;
+    tx_meta.phy_cap_mask = PHY_CAP_DEFAULT;
 
     std::array<uint8_t, FRAME_SIZE> frame{};
     ErrorCode err = Encoder::encode_frame(pkt, tx_meta, frame.data());
@@ -85,6 +87,8 @@ static void test_fixed_frame_tcp_mode() {
     ASSERT(info.transport.ack_seq == tx_meta.ack_seq, "TCP ack_seq parsed");
     ASSERT(info.transport.window == tx_meta.window, "TCP window parsed");
     ASSERT(info.transport.tmax_deadline_ds == tx_meta.tmax_deadline_ds, "TMAX extension parsed");
+    ASSERT(info.transport.phy_profile == tx_meta.phy_profile, "PHY profile parsed");
+    ASSERT(info.transport.phy_cap_mask == tx_meta.phy_cap_mask, "PHY capability mask parsed");
 }
 
 static void test_fixed_frame_udp_relay_mode() {
@@ -107,6 +111,8 @@ static void test_fixed_frame_udp_relay_mode() {
     tx_meta.hop_limit = 12;
     tx_meta.relay_hops_remaining = 3;
     tx_meta.relay_path_id = 9;
+    tx_meta.phy_profile = PhyProfile::BULK_437_WIDE;
+    tx_meta.phy_cap_mask = PHY_CAP_DEFAULT;
 
     std::array<uint8_t, FRAME_SIZE> frame{};
     ErrorCode err = Encoder::encode_frame(pkt, tx_meta, frame.data());
@@ -120,6 +126,7 @@ static void test_fixed_frame_udp_relay_mode() {
     ASSERT(info.transport.hop_limit == tx_meta.hop_limit, "UDP hop_limit parsed");
     ASSERT(info.transport.relay_hops_remaining == tx_meta.relay_hops_remaining, "Relay hops parsed");
     ASSERT(info.transport.relay_path_id == tx_meta.relay_path_id, "Relay path parsed");
+    ASSERT(info.transport.phy_profile == tx_meta.phy_profile, "UDP relay PHY profile parsed");
 }
 
 static void test_multithread_pipeline_real_data() {
@@ -155,6 +162,7 @@ static void test_multithread_pipeline_real_data() {
                 st.ground_vis_s = static_cast<uint16_t>(100 + i);
                 st.sensor_mask = 0x3F;
                 st.uptime_s = static_cast<uint32_t>(2000 + i);
+                st.phy_cap_mask = PHY_CAP_DEFAULT;
                 serialize_payload(st, pkt.payload.data(), MAX_PAYLOAD, pkt.payload_len);
             }
 

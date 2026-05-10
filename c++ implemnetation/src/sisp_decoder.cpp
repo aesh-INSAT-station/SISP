@@ -138,6 +138,10 @@ ErrorCode Decoder::decode_frame(const uint8_t in_frame[FRAME_SIZE],
     }
 
     uint16_t cursor = 8;
+    out_info.transport.phy_profile = static_cast<PhyProfile>(in_frame[cursor + 0]);
+    out_info.transport.phy_cap_mask = in_frame[cursor + 1];
+    cursor += 2;
+
     if (out_pkt.header.flags & FLAG_PROTO) {
         out_info.transport.session_id = static_cast<uint16_t>((static_cast<uint16_t>(in_frame[cursor]) << 8) |
                                                               static_cast<uint16_t>(in_frame[cursor + 1]));

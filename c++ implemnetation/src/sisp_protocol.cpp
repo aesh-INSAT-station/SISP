@@ -43,7 +43,7 @@ uint8_t compute_frame_checksum(const uint8_t* data, size_t len_without_checksum)
 }
 
 uint16_t compute_frame_extension_len(uint8_t flags) {
-    uint16_t ext_len = 0;
+    uint16_t ext_len = 2; // PHY profile + local PHY capability mask
 
     // Transport-mode extension:
     // PROTO=1 => TCP-like tuple (session_id, ack_seq, window) => 4 bytes
@@ -70,6 +70,26 @@ uint16_t compute_frame_extension_len(uint8_t flags) {
     }
 
     return ext_len;
+}
+
+uint8_t sensor_mask_for(SensorType sensor) {
+    switch (sensor) {
+        case SensorType::MAGNETOMETER: return SENSOR_MASK_MAGNETOMETER;
+        case SensorType::SUN_SENSOR: return SENSOR_MASK_SUN_SENSOR;
+        case SensorType::GYROSCOPE: return SENSOR_MASK_GYROSCOPE;
+        case SensorType::STAR_TRACKER: return SENSOR_MASK_STAR_TRACKER;
+        case SensorType::THERMAL: return SENSOR_MASK_THERMAL;
+        case SensorType::OPTICAL: return SENSOR_MASK_OPTICAL;
+        default: return 0;
+    }
+}
+
+uint8_t phy_cap_for(PhyProfile phy) {
+    switch (phy) {
+        case PhyProfile::CONTROL_437_NARROW: return PHY_CAP_CONTROL_437_NARROW;
+        case PhyProfile::BULK_437_WIDE: return PHY_CAP_BULK_437_WIDE;
+        default: return 0;
+    }
 }
 
 uint16_t compute_frame_payload_capacity(uint8_t flags) {
@@ -328,21 +348,23 @@ ErrorCode deserialize_payload(const uint8_t* data, uint16_t len, DownlinkAck& ds
 }
 
 ErrorCode serialize_payload(const Status& src, uint8_t* out, uint16_t capacity, uint16_t& out_len) {
-    if (ensure_capacity(capacity, 8) != ErrorCode::OK) return ErrorCode::ERR_LEN;
+    if (ensure_capacity(capacity, 9) != ErrorCode::OK) return ErrorCode::ERR_LEN;
     out[0] = src.energy_pct;
     put_u16_be(out + 1, src.ground_vis_s);
     out[3] = src.sensor_mask;
     put_u32_be(out + 4, src.uptime_s);
-    out_len = 8;
+    out[8] = src.phy_cap_mask;
+    out_len = 9;
     return ErrorCode::OK;
 }
 
 ErrorCode deserialize_payload(const uint8_t* data, uint16_t len, Status& dst) {
-    if (!data || len != 8) return ErrorCode::ERR_LEN;
+    if (!data || (len != 8 && len != 9)) return ErrorCode::ERR_LEN;
     dst.energy_pct = data[0];
     dst.ground_vis_s = get_u16_be(data + 1);
     dst.sensor_mask = data[3];
     dst.uptime_s = get_u32_be(data + 4);
+    dst.phy_cap_mask = (len == 9) ? data[8] : PHY_CAP_CONTROL_437_NARROW;
     return ErrorCode::OK;
 }
 
