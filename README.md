@@ -56,12 +56,25 @@ SISP/
 ### 1. Install dependencies
 
 ```bash
-pip install -r "simulation for signal and physics/requirements.txt"
+# Install everything (SVD pipeline + simulation + dashboards):
+pip install -r requirements.txt
 ```
+
+`requirements.txt` covers three groups — annotated by which component uses each:
+
+| Group | Packages | Used by |
+|---|---|---|
+| SVD pipeline | `pandas`, `pyarrow`, `requests`, `scikit-learn`, `joblib` | `sisp_svd_anomaly.py`, `sisp/`, `pipelines/` |
+| Simulation & dashboards | `numpy`, `scipy`, `matplotlib`, `streamlit`, `skyfield` | `simulation for signal and physics/*.py` |
+| Protocol harness | *(stdlib `ctypes` only)* | `python_satellite_sim_v2.py`, `all_tests/*.py` |
 
 ### 2. Run all Python tests
 
 ```bash
+# One-shot (PowerShell):
+.\all_tests\run_python_tests.ps1
+
+# Or individually:
 PYTHONIOENCODING=utf-8 python all_tests/test_dual_phy_437.py
 PYTHONIOENCODING=utf-8 python all_tests/test_integration_matrix_it02_it03_it05_it06.py
 PYTHONIOENCODING=utf-8 python all_tests/test_kalman_gaussian_3sat.py
@@ -133,18 +146,13 @@ python "simulation for signal and physics/validate_bpsk_awgn.py" --bits 500000
 
 ---
 
-## Key Results
+## SISP vs Baseline
 
-| Claim | Value | Source |
-|---|---|---|
-| C++ test coverage | 273/273 PASS | `build/Release/test_runner.exe` |
-| 30-day RMSE improvement | **94.3%** | IT-05, Kalman |
-| 10% packet-loss resilience | **85.6%** improvement | IT-06 |
-| Dual-PHY correctness | **8/8** assertions | `test_dual_phy_437.py` |
-| BER Monte Carlo error | <5% relative | `validate_bpsk_awgn.py`, 500k bits |
-| GMSK BT=0.3 ISI penalty | 1.67 dB vs BPSK | Murota-Hirade 1981 |
-| Correction snapshot (N=8) | **849 ms** < 5 s timer | Formula + measured |
-| Protocol energy overhead | **0.022%** of onboard | 12.5 kHz, 24 corr/day |
+Without SISP, a satellite with a failed sensor degrades or ends its mission early, waits up to 90 minutes for a ground-station pass to downlink data, and must be replaced at full launch cost when hardware fails.
+With SISP, the same satellite borrows a working sensor from a neighbour in under 5 seconds, relays data through ISL during 45% of each orbit instead of 10%, and extends its operational life by ~45% — cutting replacement launches, launch CO₂, and orbital debris proportionally.
+Correction quality improves by **94.3% RMSE** over 30-day cycles (Kalman, IT-05) and holds at **85.6%** under 10% packet loss (IT-06), validated by 273/273 automated C++ tests and 10 Python integration scenarios.
+The protocol overhead is negligible: a full correction round with 6 neighbours costs **93.6 ms** and **~0.022% of the daily onboard energy budget**.
+Full details, formulas, and assumption transparency: [`docs/SISP_KPI_SNAPSHOT.md`](docs/SISP_KPI_SNAPSHOT.md) · [`docs/SISP_RESEARCH_PAPER.md`](docs/SISP_RESEARCH_PAPER.md).
 
 ---
 

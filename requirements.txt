@@ -1,5 +1,22 @@
+# SISP — unified dependencies
+# Install everything with:  pip install -r requirements.txt
+
+# ── SVD anomaly pipeline
+# Used by: sisp_svd_anomaly.py  ·  sisp/  ·  pipelines/  ·  config/
 pandas>=2.2.0
 pyarrow>=15.0.0
 requests>=2.31.0
 scikit-learn>=1.4.0
 joblib>=1.3.0
+
+# ── Physical-layer simulation & dashboards
+# Used by: simulation for signal and physics/*.py
+numpy>=1.26.0
+scipy>=1.13.0
+matplotlib>=3.9.0
+streamlit>=1.35.0
+skyfield>=1.48
+
+# ── Python protocol harness & integration tests
+# Used by: python_satellite_sim_v2.py  ·  all_tests/*.py
+# (no extra deps — uses ctypes from stdlib + numpy above)
