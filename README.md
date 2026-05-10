@@ -1,243 +1,185 @@
-# SISP Unified Guide
+# SISP — Satellite Inter-Service Protocol
 
-This file is the single source of truth for:
-- protocol usage
-- where and how to modify protocol behavior
-- where and how to tune SVD, chi-square, and Kalman logic
-- all test workflows
+A cooperative, self-healing satellite protocol stack for CubeSat constellations.
+Satellites correct degraded sensors, relay data across visibility gaps, and borrow
+healthy sensors from neighbours — fully autonomously, with no ground intervention.
 
-## 1) Project At A Glance
+**273/273 C++ tests pass · 94.3% RMSE improvement (IT-05) · 12.5 kHz + 25 kHz dual-PHY**
 
-SISP is a satellite inter-service protocol implementation with:
-- fixed-size frame transport and packet payload codecs
-- state machine service flows (correction, relay, borrow, heartbeat, failure)
-- pluggable correction filters (weighted median, Kalman, hybrid)
-- C++ test runner and Python simulation and analysis harnesses
+---
 
-Primary folders:
-- `c++ implemnetation/include` - protocol types, state-machine API, correction interfaces, sim hooks
-- `c++ implemnetation/src` - protocol codec, state machine logic, correction algorithms, simulation bridge
-- `c++ implemnetation/tests` - C++ test groups
-- `all_tests` - Python integration and scenario tests
+## Repository Layout
 
-## 2) Quick Start
-
-### Build C++
-
-From repo root:
-
-```powershell
-Set-Location .\c++ implemnetation\build
-cmake --build . --config Release
+```
+SISP/
+│
+├── c++ implemnetation/          Protocol C++ library
+│   ├── include/                 Headers: protocol, state machine, correction, sim hooks
+│   ├── src/                     Implementations: codec, state machine, correction, bridge
+│   ├── tests/                   273 unit + integration tests
+│   └── build/Release/           Prebuilt: sisp.dll, test_runner.exe
+│
+├── simulation for signal and physics/   Physical layer + sustainability simulation
+│   ├── sisp_unified_sim.py      Streamlit: geometry, BER/PER, energy, dual-PHY  → port 8501
+│   ├── sisp_value_dashboard.py  Streamlit: sustainability & impact KPIs          → port 8503
+│   ├── validate_bpsk_awgn.py    Monte Carlo BER validation
+│   └── requirements.txt
+│
+├── all_tests/                   Python integration test suite
+│   ├── test_dual_phy_437.py     Dual-PHY PHY-profile correctness (8/8 PASS)
+│   ├── test_integration_matrix_it02_it03_it05_it06.py
+│   ├── test_kalman_gaussian_3sat.py
+│   ├── test_noise_weighting_and_algorithms.py
+│   └── ...
+│
+├── sisp_svd_anomaly.py          SVD anomaly detection pipeline (CLI + library)
+├── python_satellite_sim_v2.py   Level-3 multi-satellite Python harness
+├── data/raw/segments.csv        OPSSAT-AD telemetry dataset
+├── logs/                        Test run logs (auto-generated)
+│
+└── docs/                        Research paper + detailed READMEs
+    ├── SISP_RESEARCH_PAPER.md   Full academic paper (8 sections, references)
+    ├── SISP_KPI_SNAPSHOT.md     Static KPI tables for screenshots / slides
+    ├── README_00_OVERVIEW.md    Project overview and key numbers
+    ├── README_01_STATE_MACHINE.md
+    ├── README_02_SVD_CHI_SQUARE.md
+    ├── README_03_CORRECTION_ALGORITHMS.md
+    ├── README_04_SIGNAL_PHYSICS.md
+    ├── README_05_ENERGY_STUDY.md
+    └── README_06_TEST_RESULTS.md
 ```
 
-### Run C++ tests
+---
 
-```powershell
-Set-Location .\c++ implemnetation\build\Release
-.\test_runner.exe
+## Quick Start
+
+### 1. Install dependencies
+
+```bash
+pip install -r "simulation for signal and physics/requirements.txt"
 ```
 
-### Run Python tests bundle
+### 2. Run all Python tests
 
-```powershell
-Set-Location .\all_tests
-.\run_python_tests.ps1
+```bash
+PYTHONIOENCODING=utf-8 python all_tests/test_dual_phy_437.py
+PYTHONIOENCODING=utf-8 python all_tests/test_integration_matrix_it02_it03_it05_it06.py
+PYTHONIOENCODING=utf-8 python all_tests/test_kalman_gaussian_3sat.py
+PYTHONIOENCODING=utf-8 python all_tests/test_noise_weighting_and_algorithms.py
 ```
 
-### Run key Python scenarios directly
+### 3. Run C++ tests
 
-```powershell
-Set-Location ..
-python .\all_tests\test_relay_text_resilience.py
-python .\all_tests\test_borrow_addressing_flow.py
-python .\python_satellite_sim.py --packet-loss-rate 0.10 --seed 42 --max-response-frames 50
+```bash
+"c++ implemnetation/build/Release/test_runner.exe"
+# Expected: 273/273 PASS
 ```
 
-## 3) Protocol Usage
+### 4. Physical layer simulation (Streamlit)
 
-### Core C++ integration points
-
-Header and payload model:
-- `c++ implemnetation/include/sisp_protocol.hpp`
-
-Codec entry points:
-- `c++ implemnetation/src/sisp_encoder.cpp`
-- `c++ implemnetation/src/sisp_decoder.cpp`
-
-State machine:
-- `c++ implemnetation/include/sisp_state_machine.hpp`
-- `c++ implemnetation/src/sisp_state_machine.cpp`
-
-Simulation bridge for Python:
-- `c++ implemnetation/include/sim_hooks.hpp`
-- `c++ implemnetation/src/sim_hooks.cpp`
-
-### Python usage pattern
-
-1. Create per-satellite contexts with `sim_create_context`.
-2. Register a TX callback with `sim_register_tx_callback`.
-3. Route frames to targets with `sim_inject_packet`.
-4. Inject internal events with `sim_inject_event`.
-5. Read state and metrics with `sim_get_state`, `sim_get_degr`, and payload-copy helpers.
-
-Reference scripts:
-- `python_satellite_sim.py`
-- `all_tests/test_relay_text_resilience.py`
-- `all_tests/test_borrow_addressing_flow.py`
-
-## 4) Addressing And Communication Semantics
-
-Broadcast:
-- Requests that seek responders are sent to receiver `0xFF`.
-- Example: `BORROW_REQ`, `RELAY_REQ`, correction request broadcasts.
-
-Unicast:
-- Acceptance/decision and payload data are sent to specific receiver IDs.
-- Example: `BORROW_DECISION` provider -> borrower, `DOWNLINK_DATA` accepted peer -> requester.
-
-Current multi-answer borrow behavior:
-- First delivered `BORROW_DECISION` moves borrower to `BORROW_RECEIVING` and sets `peer_id`.
-- Later decisions are ignored in that state unless transitions are extended.
-
-## 5) Where To Modify Protocol Behavior
-
-### Service definitions and payload schema
-
-Edit:
-- `c++ implemnetation/include/sisp_protocol.hpp`
-- `c++ implemnetation/src/sisp_protocol.cpp`
-
-Use this when changing:
-- service codes
-- payload structures
-- serialize/deserialize logic
-- DEGR formula inputs and bucketing
-
-### State transitions and service actions
-
-Edit:
-- `c++ implemnetation/src/sisp_state_machine.cpp`
-
-Use this when changing:
-- event-to-state transition table
-- retry/timeout behavior
-- per-service send/store/ack actions
-- relay and borrow flow edge cases
-
-### Python simulation API
-
-Edit:
-- `c++ implemnetation/include/sim_hooks.hpp`
-- `c++ implemnetation/src/sim_hooks.cpp`
-
-Use this when adding:
-- new Python-visible helpers
-- custom simulation injection utilities
-- extra diagnostics for tests
-
-## 6) SVD, Chi-Square, And Kalman: Exact Edit Points
-
-### SVD pipeline (Python data path)
-
-Primary file:
-- `svd_pipeline.py`
-
-Key knobs:
-- `TARGET_EXPLAINED_VARIANCE`
-- `MIN_COMPONENTS`
-- `MAX_COMPONENTS`
-- `THRESHOLD_PERCENTILE`
-- `CHI_SQUARE_CONFIDENCE`
-
-Key functions:
-- `select_rank_k(...)` for rank/component selection
-- `score_channel_and_write_results(...)` for reconstruction error scoring
-
-### Chi-square thresholding (Python)
-
-Primary file:
-- `svd_pipeline.py`
-
-Key functions:
-- `approximate_chi_square_critical(dof, confidence)`
-- chi-square statistic and threshold usage in `score_channel_and_write_results(...)`
-
-What to tune:
-- confidence level
-- residual scaling strategy
-- decision rule and reporting outputs
-
-### Kalman and correction algorithms (C++)
-
-Interfaces and implementations:
-- `c++ implemnetation/include/sisp_correction.hpp`
-- `c++ implemnetation/src/sisp_correction.cpp`
-
-Modify these classes:
-- `KalmanFilter` for process/measurement/noise/state update policy
-- `WeightedMedianFilter` for robust weighting behavior
-- `HybridFilter` for median+Kalman chaining
-
-Where correction is called from protocol flow:
-- `action_run_kalman` in `c++ implemnetation/src/sisp_state_machine.cpp`
-
-Where filter is selected from simulation:
-- `sim_use_kalman_filter`, `sim_use_weighted_median_filter`, `sim_use_hybrid_filter` in `c++ implemnetation/src/sim_hooks.cpp`
-
-## 7) Full Testing In One Place
-
-### C++ tests (single executable)
-
-Main runner:
-- `c++ implemnetation/tests/test_main.cpp`
-
-Groups:
-- `test_encode_decode.cpp`
-- `test_payload_codec.cpp`
-- `test_frame_pipeline.cpp`
-- `test_state_machine.cpp`
-- `test_degr.cpp`
-- `test_protocol_simulation.cpp`
-- `test_comprehensive_matrix.cpp`
-
-Run:
-
-```powershell
-Set-Location .\c++ implemnetation\build\Release
-.\test_runner.exe
+```bash
+streamlit run "simulation for signal and physics/sisp_unified_sim.py"
+# Opens: http://localhost:8501
+# Tabs: Geometry (LoS+Doppler), PHY (BER/PER), Timing & Energy, Dual-PHY protocol, KPIs
 ```
 
-### Python tests and scenario matrix
+### 5. Sustainability & impact dashboard (Streamlit)
 
-Batch scripts:
-- `all_tests/run_cpp_tests.ps1`
-- `all_tests/run_python_tests.ps1`
-
-High-value scenarios:
-- `all_tests/test_relay_text_resilience.py` - multi-fragment relay with checksum corruption, out-of-order delivery, duplicate replay
-- `all_tests/test_borrow_addressing_flow.py` - borrow request/decision/data addressing and drop modeling
-- `all_tests/test_integration_matrix_it02_it03_it05_it06.py` - IT-02/03/05/06 integration matrix
-- `all_tests/test_noise_weighting_and_algorithms.py` - weighting and algorithm sensitivity
-- `all_tests/test_kalman_gaussian_3sat.py` - Kalman performance profile
-
-## 8) Recommended Change Workflow
-
-1. Modify one subsystem at a time.
-2. Rebuild C++.
-3. Run `test_runner.exe`.
-4. Run relevant Python scenario tests.
-5. If behavior changed intentionally, update this file in the same commit.
-
-## 9) Branching And Push (Parallel To Main)
-
-Example workflow:
-
-```powershell
-git checkout -b parallel-main/unified-protocol-guide
-git add README.md
-git commit -m "docs: unify protocol, algorithm tuning, and testing guide"
-git push -u origin parallel-main/unified-protocol-guide
+```bash
+streamlit run "simulation for signal and physics/sisp_value_dashboard.py"
+# Opens: http://localhost:8503
+# Tabs: Overview, Orbital Sustainability, Sensor Quality, Energy & Climate,
+#        50-Year Projection, Assumptions & Formulas
+# All numbers derive from sidebar sliders — no hardcoded values.
 ```
 
-This keeps a clean branch in parallel to `main` for review and merge.
+### 6. SVD anomaly detection
+
+```bash
+# List available channels
+python sisp_svd_anomaly.py --list-channels
+
+# Run on all channels
+python sisp_svd_anomaly.py
+
+# Run on one channel with plots
+python sisp_svd_anomaly.py --channel CADC0894 --plot
+
+# Save results to CSV
+python sisp_svd_anomaly.py --out results/svd_results.csv
+```
+
+### 7. Validate BPSK BER (Monte Carlo)
+
+```bash
+python "simulation for signal and physics/validate_bpsk_awgn.py" --bits 500000
+```
+
+---
+
+## Documentation Index
+
+| Document | What it covers |
+|---|---|
+| [docs/SISP_RESEARCH_PAPER.md](docs/SISP_RESEARCH_PAPER.md) | Full paper: state machine, SVD, Kalman, physics, results, novelty vs field |
+| [docs/SISP_KPI_SNAPSHOT.md](docs/SISP_KPI_SNAPSHOT.md) | Static KPI tables (screenshots / slides) |
+| [docs/README_00_OVERVIEW.md](docs/README_00_OVERVIEW.md) | Project overview and key numbers |
+| [docs/README_01_STATE_MACHINE.md](docs/README_01_STATE_MACHINE.md) | All 21 states, 24 events, transition flows, Python API |
+| [docs/README_02_SVD_CHI_SQUARE.md](docs/README_02_SVD_CHI_SQUARE.md) | SVD rank selection, chi-square NIS gate, tuning |
+| [docs/README_03_CORRECTION_ALGORITHMS.md](docs/README_03_CORRECTION_ALGORITHMS.md) | Kalman, weighted median, hybrid, NIS-gated — benchmark tables |
+| [docs/README_04_SIGNAL_PHYSICS.md](docs/README_04_SIGNAL_PHYSICS.md) | GMSK BER, K=7 union bound, link budget, Doppler, dual-PHY |
+| [docs/README_05_ENERGY_STUDY.md](docs/README_05_ENERGY_STUDY.md) | Per-frame energy, correction snapshot, bulk relay |
+| [docs/README_06_TEST_RESULTS.md](docs/README_06_TEST_RESULTS.md) | All extracted log metrics and result tables |
+
+---
+
+## Key Results
+
+| Claim | Value | Source |
+|---|---|---|
+| C++ test coverage | 273/273 PASS | `build/Release/test_runner.exe` |
+| 30-day RMSE improvement | **94.3%** | IT-05, Kalman |
+| 10% packet-loss resilience | **85.6%** improvement | IT-06 |
+| Dual-PHY correctness | **8/8** assertions | `test_dual_phy_437.py` |
+| BER Monte Carlo error | <5% relative | `validate_bpsk_awgn.py`, 500k bits |
+| GMSK BT=0.3 ISI penalty | 1.67 dB vs BPSK | Murota-Hirade 1981 |
+| Correction snapshot (N=8) | **849 ms** < 5 s timer | Formula + measured |
+| Protocol energy overhead | **0.022%** of onboard | 12.5 kHz, 24 corr/day |
+
+---
+
+## Protocol Event Codes
+
+> **Important:** Always use these exact integer values in Python harnesses.
+
+| Code | Name | Trigger |
+|---|---|---|
+| 12 | `FAULT_DETECTED` | Sensor fault detected internally |
+| 13 | `TIMER_EXPIRED` | RTOS tick, deadline passed |
+| 14 | `ENERGY_LOW` | Power monitor threshold |
+| 21 | `CRITICAL_FAILURE` | Catastrophic self-failure |
+| 22 | `RESET` | Ground command |
+
+---
+
+## Tuning Points
+
+| What to change | File | Symbol |
+|---|---|---|
+| Correction algorithm | `src/sisp_state_machine.cpp` | `ctx.correction_filter` via `sim_use_kalman_filter()` |
+| Kalman noise parameters | `sim_hooks.cpp` | `sim_use_kalman_filter(ctx, q, r)` |
+| SVD rank / threshold | `sisp_svd_anomaly.py` | `CONFIG` block at top of file |
+| PHY profile selection | `src/sisp_state_machine.cpp` | `select_tx_phy()` |
+| DEGR score formula | `src/sisp_protocol.cpp` | `compute_degr()` |
+| Frame size | `include/sisp_protocol.hpp` | `FRAME_SIZE` (currently 64 bytes) |
+| Timer deadlines | `src/sisp_state_machine.cpp` | `ctx.timer_deadline_ms = g_current_time_ms + N` |
+
+---
+
+## References
+
+- Murota & Hirade (1981): GMSK BER, α_BT=0.68 for BT=0.3
+- Heller & Jacobs (1971): K=7 R=1/2 Viterbi union bound, d_free=10, coeff=36
+- Dallas et al. (2020): CO₂ per launch, npj Microgravity
+- OPSSAT-AD dataset: Zenodo 12588359
+- UCS Satellite Database: ucsusa.org/satellite-database
