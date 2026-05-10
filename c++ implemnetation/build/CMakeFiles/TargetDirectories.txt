@@ -1,0 +1,5 @@
+C:/Users/HP/aesh/SISP/c++ implemnetation/build/CMakeFiles/sisp.dir
+C:/Users/HP/aesh/SISP/c++ implemnetation/build/CMakeFiles/test_runner.dir
+C:/Users/HP/aesh/SISP/c++ implemnetation/build/CMakeFiles/RUN_TESTS.dir
+C:/Users/HP/aesh/SISP/c++ implemnetation/build/CMakeFiles/ALL_BUILD.dir
+C:/Users/HP/aesh/SISP/c++ implemnetation/build/CMakeFiles/ZERO_CHECK.dir
