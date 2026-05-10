@@ -1,0 +1,5 @@
+C:/Users/HP/aesh/SISP/c++ implemnetation/build_ninja/CMakeFiles/sisp.dir
+C:/Users/HP/aesh/SISP/c++ implemnetation/build_ninja/CMakeFiles/test_runner.dir
+C:/Users/HP/aesh/SISP/c++ implemnetation/build_ninja/CMakeFiles/test.dir
+C:/Users/HP/aesh/SISP/c++ implemnetation/build_ninja/CMakeFiles/edit_cache.dir
+C:/Users/HP/aesh/SISP/c++ implemnetation/build_ninja/CMakeFiles/rebuild_cache.dir
