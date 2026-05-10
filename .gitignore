@@ -1,3 +1,13 @@
 data/*
 .venv/
 __pycache__/
+logs/
+streamlit_*.log
+*.exe
+*.dll
+*.obj
+*.lib
+*.exp
+*.tlog
+*.ninja_log
+*.ninja_deps

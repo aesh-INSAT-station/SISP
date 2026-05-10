@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import shutil
@@ -137,6 +138,64 @@ def download_opssat_dataset(raw_dir: Path, written_files: list[Path]) -> Path:
     written_files.append(raw_path)
     print(f"Saved raw file to: {raw_path}")
     return raw_path
+
+
+def stage_local_dataset(input_path: Path, raw_dir: Path, written_files: list[Path]) -> Path:
+    """Copy a user-provided dataset into data/raw for reproducibility.
+
+    If the input already lives under raw_dir, no copy is performed.
+    """
+    input_path = input_path.expanduser().resolve()
+    if not input_path.exists():
+        raise FileNotFoundError(f"Input dataset not found: {input_path}")
+
+    try:
+        input_path.relative_to(raw_dir.resolve())
+        # Already staged in raw dir.
+        return input_path
+    except ValueError:
+        pass
+
+    staged_name = input_path.name
+    staged_path = raw_dir / staged_name
+    if staged_path.exists() and staged_path.resolve() == input_path:
+        return staged_path
+
+    # Avoid accidental overwrite if user repeatedly runs with different sources.
+    if staged_path.exists() and staged_path.resolve() != input_path:
+        staged_path = raw_dir / f"local_{staged_name}"
+        if staged_path.exists():
+            # Last-resort uniqueness.
+            staged_path = raw_dir / f"local_{input_path.stem}_{abs(hash(str(input_path)))}{input_path.suffix}"
+
+    shutil.copy2(input_path, staged_path)
+    written_files.append(staged_path)
+    print(f"Staged local dataset to: {staged_path}")
+    return staged_path
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Ingest OPSSAT-AD dataset into per-channel Parquet files under data/interim/by_channel. "
+            "Uses a local dataset.csv if present, or downloads from Zenodo if needed."
+        )
+    )
+    parser.add_argument(
+        "--input",
+        type=str,
+        default=None,
+        help=(
+            "Path to a local dataset file (.csv/.parquet/.zip). If provided, no download is performed. "
+            "If omitted, the script will use repo-root dataset.csv if present, otherwise it downloads from Zenodo."
+        ),
+    )
+    parser.add_argument(
+        "--no-download",
+        action="store_true",
+        help="Fail if no local dataset is available instead of downloading from Zenodo.",
+    )
+    return parser.parse_args()
 
 
 def extract_dataset_table(raw_zip_path: Path, raw_dir: Path, written_files: list[Path]) -> Path:
@@ -390,12 +449,23 @@ def main() -> None:
 
     written_files: list[Path] = []
 
-    raw_path = download_opssat_dataset(raw_dir=raw_dir, written_files=written_files)
-    dataset_path = resolve_dataset_path(
-        raw_path=raw_path,
-        raw_dir=raw_dir,
-        written_files=written_files,
-    )
+    args = parse_args()
+    local_candidate = project_root / "dataset.csv"
+
+    if args.input:
+        raw_path = stage_local_dataset(Path(args.input), raw_dir=raw_dir, written_files=written_files)
+    elif local_candidate.exists():
+        print(f"Using local dataset file: {local_candidate}")
+        raw_path = stage_local_dataset(local_candidate, raw_dir=raw_dir, written_files=written_files)
+    else:
+        if args.no_download:
+            raise FileNotFoundError(
+                "No local dataset provided/found (expected --input or repo-root dataset.csv), "
+                "and --no-download was set."
+            )
+        raw_path = download_opssat_dataset(raw_dir=raw_dir, written_files=written_files)
+
+    dataset_path = resolve_dataset_path(raw_path=raw_path, raw_dir=raw_dir, written_files=written_files)
 
     df = load_dataset(dataset_path)
     validate_required_columns(df)

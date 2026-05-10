@@ -150,10 +150,11 @@ SERVICES = {
     0x2: "RELAY_REQ",
     0x3: "RELAY_ACCEPT",
     0x4: "RELAY_REJECT",
-    0x5: "RELAY_DATA",
-    0x6: "HEARTBEAT",
-    0x7: "DOWNLINK_DATA",
-    0x8: "DOWNLINK_ACK",
+    0x5: "DOWNLINK_DATA",
+    0x6: "DOWNLINK_ACK",
+    0x7: "STATUS_BROADCAST",
+    0x8: "HEARTBEAT",
+    0x9: "HEARTBEAT_ACK",
     0xA: "BORROW_DECISION",
     0xE: "BORROW_REQ",
     0xF: "FAILURE",
@@ -179,19 +180,15 @@ class TxEvent:
 def _unpack_header(frame: bytes) -> Tuple[int, int, int, int, int, int]:
     if len(frame) < 5:
         return (0, 0, 0, 0, 0, 0)
-    byte0 = frame[0]
-    byte1 = frame[1]
-    byte2 = frame[2]
-    byte3 = frame[3]
-    byte4 = frame[4]
-
-    svc = (byte0 >> 3) & 0x1F
-    sndr = byte1
-    rcvr = byte2
-    seq = byte3
-    degr = (byte4 >> 4) & 0x0F
-    flags = byte4 & 0x0F
-    return svc, sndr, rcvr, seq, degr, flags
+    # Must match `SISP::Header` bit layout in `c++ implemnetation/include/sisp_protocol.hpp`.
+    b0, b1, b2, b3, b4 = frame[:5]
+    svc = (b0 >> 4) & 0x0F
+    sndr = ((b0 & 0x0F) << 4) | ((b1 >> 4) & 0x0F)
+    rcvr = ((b1 & 0x0F) << 4) | ((b2 >> 4) & 0x0F)
+    seq = ((b2 & 0x0F) << 4) | ((b3 >> 4) & 0x0F)
+    degr = b3 & 0x0F
+    flags = (b4 >> 4) & 0x0F
+    return int(svc), int(sndr), int(rcvr), int(seq), int(degr), int(flags)
 
 
 def _svc_name(svc: int) -> str:
@@ -199,7 +196,7 @@ def _svc_name(svc: int) -> str:
 
 
 @st.cache_data(show_spinner=False)
-def run_protocol_probe(
+def _run_protocol_probe_cached(
     dll_path: str,
     scenario: str,
     num_sats: int,
@@ -207,7 +204,7 @@ def run_protocol_probe(
     advance_total_ms: int,
     tick_ms: int,
     seed: int,
-) -> List[TxEvent]:
+) -> List[dict]:
     """Run a short C++ state-machine probe and return emitted frames.
 
     This does NOT simulate PHY BER/PER; it measures how many 64B frames the
@@ -242,7 +239,7 @@ def run_protocol_probe(
 
     sat_contexts: Dict[int, int] = {}
     frame_queue: List[Tuple[int, bytes]] = []
-    events: List[TxEvent] = []
+    events: List[dict] = []
 
     def process_queue():
         while frame_queue:
@@ -268,15 +265,15 @@ def run_protocol_probe(
                 delivered_targets.append(t)
 
         events.append(
-            TxEvent(
-                svc=int(svc),
-                svc_name=_svc_name(int(svc)),
-                sndr=int(sndr),
-                rcvr=int(rcvr),
-                dst=int(dst),
-                length_b=int(length),
-                targets=tuple(delivered_targets),
-            )
+            {
+                "svc": int(svc),
+                "svc_name": _svc_name(int(svc)),
+                "sndr": int(sndr),
+                "rcvr": int(rcvr),
+                "dst": int(dst),
+                "length_b": int(length),
+                "targets": list(delivered_targets),
+            }
         )
 
     cb = TX_CB(on_tx)
@@ -321,6 +318,43 @@ def run_protocol_probe(
             lib.sim_destroy_context(ctx)
 
     return events
+
+
+def run_protocol_probe(
+    dll_path: str,
+    scenario: str,
+    num_sats: int,
+    packet_loss_rate: float,
+    advance_total_ms: int,
+    tick_ms: int,
+    seed: int,
+) -> List[TxEvent]:
+    """Non-cached wrapper returning typed events.
+
+    The cached function returns a pickle-safe list[dict] so Streamlit caching
+    remains stable even when frames are emitted.
+    """
+    raw = _run_protocol_probe_cached(
+        dll_path=dll_path,
+        scenario=scenario,
+        num_sats=num_sats,
+        packet_loss_rate=packet_loss_rate,
+        advance_total_ms=advance_total_ms,
+        tick_ms=tick_ms,
+        seed=seed,
+    )
+    return [
+        TxEvent(
+            svc=int(ev["svc"]),
+            svc_name=str(ev["svc_name"]),
+            sndr=int(ev["sndr"]),
+            rcvr=int(ev["rcvr"]),
+            dst=int(ev["dst"]),
+            length_b=int(ev["length_b"]),
+            targets=tuple(int(x) for x in ev.get("targets", [])),
+        )
+        for ev in raw
+    ]
 
 
 def energy_from_events(

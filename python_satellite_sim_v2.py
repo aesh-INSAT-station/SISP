@@ -19,6 +19,7 @@ Each scenario has comprehensive logging showing:
 """
 
 import ctypes
+import argparse
 import os
 import struct
 import time
@@ -70,10 +71,11 @@ lib.sim_get_last_failed_satellite.restype = ctypes.c_uint8
 # ============================================================================
 # EVENT CODES
 # ============================================================================
-EVT_FAULT_DETECTED = 10
-EVT_ENERGY_LOW = 11
-EVT_CRITICAL_FAILURE = 21
+# Must match `SISP::Event` in `c++ implemnetation/include/sisp_state_machine.hpp`.
+EVT_FAULT_DETECTED = 12
 EVT_TIMER_EXPIRED = 13
+EVT_ENERGY_LOW = 14
+EVT_CRITICAL_FAILURE = 21
 
 # ============================================================================
 # STATE CODES
@@ -186,6 +188,15 @@ def process_queue():
 # ============================================================================
 sat_contexts = {}
 stats = defaultdict(int)
+AUTO_ADVANCE = False
+
+
+def pause_for_review(next_label: str) -> None:
+    if AUTO_ADVANCE:
+        print(f"[AUTO] Continuing to {next_label}...")
+        return
+    print(f"Press ENTER to continue to {next_label}...")
+    input()
 
 def create_topology(num_sats: int):
     """Create multi-satellite constellation"""
@@ -264,8 +275,7 @@ def scenario_1_signal_propagation():
     cleanup()
     
     print("\n✓ Scenario 1 COMPLETE\n")
-    print("Press ENTER to continue to Scenario 2...")
-    input()
+    pause_for_review("Scenario 2")
 
 # ============================================================================
 # SCENARIO 2: DEGR WEIGHTING WITH MIXED HEALTH
@@ -303,10 +313,9 @@ def scenario_2_degr_mixed_health():
     for sat_id in sat_contexts.keys():
         dump_satellite_state(sat_id, f"after sat3 fails")
     
-    print("\n✓ Scenario 2 COMPLETE - NO CASCADE OBSERVED ✓\n")
-    print("Press ENTER to continue to Scenario 3...")
     cleanup()
-    input()
+    print("\n✓ Scenario 2 COMPLETE - NO CASCADE OBSERVED ✓\n")
+    pause_for_review("Scenario 3")
 
 # ============================================================================
 # SCENARIO 3: RELAY ACROSS VISIBILITY GAP
@@ -341,8 +350,7 @@ def scenario_3_relay_gap():
     
     cleanup()
     print("\n✓ Scenario 3 COMPLETE\n")
-    print("Press ENTER to continue to Scenario 4...")
-    input()
+    pause_for_review("Scenario 4")
 
 # ============================================================================
 # SCENARIO 4: 30-DAY CORRECTION QUALITY
@@ -394,8 +402,7 @@ def scenario_4_30day_quality():
     
     cleanup()
     print("\n✓ Scenario 4 COMPLETE\n")
-    print("Press ENTER to continue to Scenario 5...")
-    input()
+    pause_for_review("Scenario 5")
 
 # ============================================================================
 # SCENARIO 5: PACKET LOSS RESILIENCE
@@ -470,6 +477,11 @@ def scenario_5_packet_loss():
 # MAIN
 # ============================================================================
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run the verbose SISP multi-satellite integration demo.")
+    parser.add_argument("--auto", action="store_true", help="Run all scenarios without interactive ENTER prompts.")
+    args = parser.parse_args()
+    AUTO_ADVANCE = args.auto
+
     print("\n" + "=" * 80)
     print("SISP LEVEL 3: COMPREHENSIVE MULTI-SATELLITE INTEGRATION")
     print("=" * 80)

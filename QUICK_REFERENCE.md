@@ -160,7 +160,8 @@ lib.sim_destroy_context(ctx)         # void* ctx → void
 ```python
 # Inject internal event
 lib.sim_inject_event(ctx, event_code)  # void* ctx, int event → void
-# Events: EVT_FAULT_DETECTED=0, EVT_ENERGY_LOW=1, EVT_CRITICAL_FAILURE=2, ...
+# Events (match `SISP::Event` in `c++ implemnetation/include/sisp_state_machine.hpp`):
+#   EVT_FAULT_DETECTED=12, EVT_TIMER_EXPIRED=13, EVT_ENERGY_LOW=14, EVT_CRITICAL_FAILURE=21
 
 # Inject received packet
 buf = (ctypes.c_uint8 * len(frame)).from_buffer_copy(frame)

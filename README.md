@@ -140,6 +140,20 @@ Use this when adding:
 
 ### SVD pipeline (Python data path)
 
+Run the dataset pipeline end-to-end (uses repo-root `dataset.csv` if present, otherwise downloads):
+
+```powershell
+python .\ingest.py
+python .\preprocess.py
+python .\svd_pipeline.py
+```
+
+Force a specific local file and prevent downloading:
+
+```powershell
+python .\ingest.py --input .\dataset.csv --no-download
+```
+
 Primary file:
 - `svd_pipeline.py`
 
