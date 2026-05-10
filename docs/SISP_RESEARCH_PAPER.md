@@ -270,9 +270,22 @@ This is comparable to the 12.5 kHz channel width. A guard margin of **1.5 dB** i
 
 ### 5.5 Packet Error Rate
 
-For a 64-byte (512-bit) frame with i.i.d. residual bit error probability $p$:
+**Frame bits clarification.** SISP uses a **64-byte physical frame = 512 bits** total on-the-wire. Within those 64 bytes:
 
-$$\text{PER} = 1 - \exp(512 \cdot \ln(1-p)) \approx 1 - (1-p)^{512}$$
+| Layer | Bytes | Bits |
+|---|---|---|
+| Header | 5 | 40 |
+| Transport extension | ~8–12 | ~64–96 |
+| Useful payload | ~43–51 | ~344–408 |
+| Padding + frame checksum | ~1–8 | ~8–64 |
+
+The PER formula operates on the **full 64-byte frame** (512 bits), because a single bit error anywhere forces a frame retransmission. The *information* bits per frame are only ~344–408 bits; the overhead is unavoidable protocol metadata.
+
+After coding expansion (Conv+RS ×2.287), the **over-the-air bits per frame** are $512 \times 2.287 \approx 1{,}171$ bits. The decoder receives 1,171 air bits and recovers 512 bits. The PER formula below operates after FEC decoding (post-Viterbi, post-RS), on the 512 recovered bits:
+
+$$\text{PER} = 1 - \exp(512 \cdot \ln(1-p_{\text{post-FEC}})) \approx 1 - (1-p)^{512}$$
+
+This is the **conservative** choice: any uncorrected bit in the 512-bit decoded frame triggers ARQ. An optimistic bound using only the ~380 information bits gives $\sim 26\%$ lower PER — but the implementation retransmits the whole frame, so 512 bits is correct.
 
 Monte Carlo validation confirms the BPSK AWGN formula is accurate to within 0.4% relative error at all simulated Eb/N0 values (Section 7.3).
 
@@ -458,7 +471,49 @@ The protocol's 3-retry mechanism and 5-second collection window absorb packet lo
 
 ---
 
-## 8. Conclusion
+## 8. Novelty Assessment and State of the Field
+
+### 8.1 Existing Work
+
+**CCSDS standards (Proximity-1, SLS-SLP, AOS)** define physical and data-link layers for proximity ISL but provide no application-layer services — they do not address sensor fusion, correction, or borrowing. They are also targeted at large spacecraft with dedicated hardware modems and $>$1 W RF budgets.
+
+**DTN / Bundle Protocol (RFC 5050)** enables store-and-forward relay across disrupted links. It handles data transport but has no concept of real-time distributed sensor correction or cross-satellite sensor sharing.
+
+**Formation flying protocols** (e.g., NASA SPHERES, ESA Proba-3) address relative navigation and proximity operations but assume dedicated hardware and homogeneous sensor suites. They do not define a service-layer for sensor borrowing or correction.
+
+**Federated learning on orbit** (e.g., Google Satellite FL proposals, ESA Φ-sat series) enables distributed model training but requires much higher bandwidth than SISP's 12.5 kbps control channel and does not address real-time sensor fault recovery.
+
+**SmallSat communication protocols** (e.g., AX.25, HDLC wrappers, Li-1 UHF modem protocols) are point-to-point physical-layer wrappers with no state machine, no service layer, and no anomaly gating.
+
+**Fault-tolerant satellite architectures** (e.g., Iridium's cross-link relay) handle data relay but require dedicated ISL hardware (Ka-band phased arrays) and are not open or reconfigurable.
+
+### 8.2 SISP Contributions vs the Field
+
+| Contribution | Existing state | SISP |
+|---|---|---|
+| Dual-PHY ISL at 437 MHz | Not standardised | **State-machine-driven 12.5/25 kHz profile selection per-frame** |
+| Sensor borrowing service | Absent in all open protocols | **BORROW_REQ/DECISION/DATA service with provider selection** |
+| Distributed real-time correction | Off-line post-processing only | **5-second in-orbit correction with Kalman/hybrid filter** |
+| DEGR-weighted trust | Binary healthy/failed models | **Continuous 4-source DEGR score → analogue weight** |
+| SVD anomaly gating of filter inputs | Not applied in protocol context | **Per-channel unsupervised SVD screen + chi-square NIS gate** |
+| Failure isolation proof | State-machine invariant asserted | **273 automated tests, including cascade-failure tests** |
+| Energy attribution per service | Absent (black-box power models) | **Frame-level DC energy accounting, service breakdown** |
+
+### 8.3 Key Novelties
+
+**1. Software-defined sensor redundancy via borrowing.** Traditional fault tolerance requires hardware redundancy (two identical sensors per satellite). SISP replaces hardware with protocol: when a sensor fails, the satellite borrows readings from a neighbour. This is, to our knowledge, the first open protocol that formalises sensor borrowing as a named service with a defined handshake, PHY negotiation, and state machine.
+
+**2. DEGR score as a continuous analogue trust metric.** Binary healthy/failed models are too coarse for mixed-quality sensor arrays in degraded LEO environments. SISP's 4-source DEGR score (Kalman k-factor, SVD residual, mission age, orbit error) provides a continuous weight signal. Experiments confirm that inverse-error weighting provides 17.8% better steady-state correction quality than neutral weighting — a measurable contribution attributable solely to the trust model.
+
+**3. SVD anomaly gating embedded in the protocol correction path.** Anomaly detection is usually applied offline on ground. SISP integrates an unsupervised SVD screen directly into the distributed correction pipeline, running on the received correction responses before they enter the Kalman filter. This prevents a misbehaving satellite from corrupting the correction estimate of its neighbours — a security-relevant property not addressed in any existing formation flying protocol.
+
+**4. Union-bound BER model for K=7 Viterbi replacing naive +7 dB proxy.** The +7 dB constant used in most amateur satellite link budgets is a single-point approximation valid only near BER=10⁻⁷. SISP replaces it with the Heller-Jacobs union bound $P_b \leq 36 Q(\sqrt{10 E_b/N_0})$, which is accurate across all Eb/N0 values and captures the waterfall behaviour critical for PER modelling.
+
+**5. Dual-PHY UHF state machine with peer capability negotiation.** GMSK BT=0.3 BER formula with $\alpha_{BT}=0.68$ (Murota-Hirade), combined with per-peer PHY capability tracking and per-frame profile selection, provides a complete ISL physical-layer model that matches real COTS UHF hardware behaviour. No existing CubeSat protocol formalises this.
+
+---
+
+## 9. Conclusion and Long-Term Impact
 
 SISP demonstrates that a small, deterministic protocol stack can provide meaningful distributed sensor correction in a CubeSat constellation using commodity UHF hardware. The key contributions are:
 
