@@ -21,7 +21,7 @@ ErrorCode Decoder::decode(const uint8_t* buf, uint16_t len, Packet& out_pkt) {
     }
 
     // Reject reserved SVC codes
-    if (out_pkt.header.svc >= ServiceCode::RESERVED_A && 
+    if (out_pkt.header.svc >= ServiceCode::RESERVED_B && 
         out_pkt.header.svc <= ServiceCode::RESERVED_D) {
         return ErrorCode::ERR_RESERVED;
     }
@@ -115,7 +115,7 @@ ErrorCode Decoder::decode_frame(const uint8_t in_frame[FRAME_SIZE],
         return ErrorCode::ERR_CKSM;
     }
 
-    if (out_pkt.header.svc >= ServiceCode::RESERVED_A &&
+    if (out_pkt.header.svc >= ServiceCode::RESERVED_B &&
         out_pkt.header.svc <= ServiceCode::RESERVED_D) {
         return ErrorCode::ERR_RESERVED;
     }

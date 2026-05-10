@@ -36,7 +36,7 @@ enum class ServiceCode : uint8_t {
     STATUS_BROADCAST = 0x7,
     HEARTBEAT = 0x8,
     HEARTBEAT_ACK = 0x9,
-    RESERVED_A = 0xA,
+    BORROW_DECISION = 0xA,
     RESERVED_B = 0xB,
     RESERVED_C = 0xC,
     RESERVED_D = 0xD,

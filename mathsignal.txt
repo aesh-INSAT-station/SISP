@@ -1,0 +1,254 @@
+Here's the full mathematical treatment of the SISP physical layer — signal model, channel impairments, link budget, coding, and PER analysis — written as a formal simulation reference document, followed by an interactive BER/PER curve tool.
+
+---
+
+## SISP Physical Layer — Full Signal & Noise Model
+
+---
+
+### 1. The Transmitted Signal Model
+
+SISP uses **BPSK** (Binary Phase Shift Keying). The continuous-time passband signal from satellite A is:
+
+$$s(t) = \sqrt{2P_{tx}} \cdot b(t) \cdot \cos(2\pi f_c t + \varphi_0)$$
+
+where $b(t) \in \{-1, +1\}$ is the NRZ baseband bit stream (each bit has duration $T_b = 1/R_b$, with $R_b$ the bit rate), $f_c = 26 \text{ GHz}$ (Ka-band carrier), and $\varphi_0$ is the initial phase offset.
+
+The **complex baseband equivalent** (used in simulation) is:
+
+$$\tilde{s}(t) = \sqrt{P_{tx}} \cdot b(t) \cdot e^{j\varphi_0}$$
+
+The **energy per bit** is:
+
+$$E_b = P_{tx} \cdot T_b = \frac{P_{tx}}{R_b}$$
+
+For $P_{tx} = 1\text{ W}$, $R_b = 100\text{ kbps}$: $E_b = 10^{-5}$ J = $-50$ dBJ.
+
+---
+
+### 2. The Channel — Three Independent Impairments
+
+#### 2.1 Free-Space Path Loss (Friis equation)
+
+The received signal power at distance $d$ is given by the **Friis transmission equation**:
+
+$$P_r = P_{tx} \cdot G_{tx} \cdot G_{rx} \cdot \left(\frac{\lambda}{4\pi d}\right)^2 = P_{tx} \cdot G_{tx} \cdot G_{rx} \cdot \frac{c^2}{(4\pi d f_c)^2}$$
+
+In decibels, the **free-space path loss** $L_{fs}$:
+
+$$L_{fs}(\text{dB}) = 20\log_{10}(d) + 20\log_{10}(f_c) + 20\log_{10}\!\left(\frac{4\pi}{c}\right)$$
+
+Computing term by term at $d = 1000\text{ km}$, $f_c = 26\text{ GHz}$:
+
+$$L_{fs} = \underbrace{20\log_{10}(10^6)}_{=120\text{ dB}} + \underbrace{20\log_{10}(2.6\times10^{10})}_{=208.3\text{ dB}} + \underbrace{20\log_{10}\!\left(\frac{4\pi}{3\times10^8}\right)}_{=-147.5\text{ dB}} \approx 180.7\text{ dB}$$
+
+The **distance law**: every doubling of $d$ adds $+6$ dB of loss. From $d = 500\text{ km}$ to $d = 2000\text{ km}$, loss increases by $+12$ dB.
+
+#### 2.2 Doppler Shift
+
+Two LEO satellites at $v_1 \approx v_2 \approx 7.8\text{ km/s}$ in non-coplanar orbits have a relative radial velocity $v_r$. The received frequency:
+
+$$f_r = f_c \cdot \frac{c + v_{r,rx}}{c - v_{r,tx}} \approx f_c\left(1 + \frac{v_r}{c}\right)$$
+
+The **Doppler shift** $\Delta f$:
+
+$$\Delta f = f_c \cdot \frac{v_r}{c}$$
+
+At Ka-band ($f_c = 26\text{ GHz}$), for $v_r = 1\text{ km/s}$ (typical non-coplanar LEO pair):
+
+$$\Delta f = 26\times10^9 \times \frac{1000}{3\times10^8} = 86.7\text{ kHz}$$
+
+This is significant — it is nearly the full signal bandwidth. The received signal after Doppler:
+
+$$r_{\text{Doppler}}(t) = \sqrt{P_r}\cdot b\!\left(t - \tau\right)\cdot\cos\!\Big(2\pi(f_c + \Delta f)t + \varphi\Big)$$
+
+For simulation, you model the **time-varying** Doppler because $v_r(t)$ changes as the satellites orbit:
+
+$$\Delta f(t) = \frac{f_c}{c}\cdot\dot{d}(t)$$
+
+where $\dot{d}(t) = \frac{d}{dt}|\mathbf{r}_A(t) - \mathbf{r}_B(t)|$ is the range rate from your orbit propagator (SGP4/Orekit, Module M1).
+
+**Doppler pre-compensation**: Since both satellites know each other's approximate ephemeris, A can pre-shift its transmitted frequency by $-\Delta f_{\text{predicted}}$ before transmission. Residual Doppler after pre-compensation is then only the ephemeris prediction error — typically $< 1\text{ kHz}$ — well within the receiver's tracking loop bandwidth.
+
+#### 2.3 Thermal Noise
+
+The received noise is modeled as **AWGN** (Additive White Gaussian Noise). Noise power in bandwidth $B$:
+
+$$N = k_B \cdot T_{sys} \cdot B$$
+
+where $k_B = 1.38\times10^{-23}\text{ J/K}$ (Boltzmann), $T_{sys}$ is the **system noise temperature**:
+
+$$T_{sys} = T_{ant} + T_{LNA} + T_{cable}$$
+
+For a Ka-band CubeSat receiver: $T_{ant} \approx 30\text{ K}$ (cold sky), $T_{LNA} \approx 200\text{ K}$ (typical Ka-band LNA noise figure $\approx 3\text{ dB}$), $T_{cable} \approx 50\text{ K}$ → $T_{sys} \approx 280\text{ K}$.
+
+In dBm for $B = 100\text{ kHz}$:
+
+$$N = 10\log_{10}(1.38\times10^{-23} \times 280 \times 10^5) + 30 \approx -124.1\text{ dBm}$$
+
+The **noise spectral density** $N_0 = k_B T_{sys}$ sets the fundamental limit:
+
+$$N_0 = 1.38\times10^{-23} \times 280 = 3.86\times10^{-21}\text{ W/Hz} = -174.1\text{ dBm/Hz}$$
+
+---
+
+### 3. Complete Link Budget
+
+$$\text{SNR}(\text{dB}) = P_{tx} + G_{tx} + G_{rx} - L_{fs} - L_{point} - N$$
+
+$$\frac{E_b}{N_0}(\text{dB}) = \text{SNR}(\text{dB}) + 10\log_{10}\!\left(\frac{B}{R_b}\right)$$
+
+For **SISP baseline** ($d = 1000\text{ km}$, $B = 100\text{ kHz}$, $R_b = 100\text{ kbps}$, so $B/R_b = 1$ → $0\text{ dB}$ bandwidth factor):
+
+| Parameter | Value | Notes |
+|---|---|---|
+| $P_{tx}$ | $+30\text{ dBm}$ | 1 W |
+| $G_{tx}$ | $+23\text{ dBi}$ | Ka-band high-gain (phased array / small dish) |
+| $G_{rx}$ | $+23\text{ dBi}$ | Same |
+| $L_{fs}$ | $180.7\text{ dB}$ | 1000 km, 26 GHz |
+| $L_{point}$ | $2\text{ dB}$ | Pointing loss estimate |
+| $N$ | $-124.1\text{ dBm}$ | 100 kHz, 280 K |
+| **SNR (C/N)** | **$+17.4\text{ dB}$** | computed in $B$ |
+| **$E_b/N_0$** | **$+17.4\text{ dB}$** | $B = R_b$ |
+
+If you instead assume $G_{tx}=G_{rx}=10\text{ dBi}$, the same 1000 km link gives $E_b/N_0 \approx -8.6\text{ dB}$ (i.e., it will not close without either shorter ranges or higher gain/power).
+
+At $B = 1\text{ MHz}$, the noise power increases by +10 dB ($N \approx -114.1\text{ dBm}$), so **C/N** drops by 10 dB. However, **$E_b/N_0$ is unchanged** for fixed $R_b$ because the $10\log_{10}(B/R_b)$ term cancels. The safest way to avoid bandwidth-confusion is to compute $C/N_0$ first and then:
+
+$$\frac{E_b}{N_0}(\text{dB}) = \frac{C}{N_0}(\text{dB-Hz}) - 10\log_{10}(R_b)$$
+
+---
+
+### 4. BER Analysis — Three Regimes
+
+#### 4.1 Uncoded BPSK
+
+The optimal coherent receiver computes the decision variable:
+
+$$z = \int_0^{T_b} r(t)\cdot\sqrt{2}\cos(2\pi f_c t)\,dt$$
+
+and decides $\hat{b} = +1$ if $z > 0$, else $-1$. The BER is:
+
+$$\text{BER}_{\text{BPSK}} = Q\!\left(\sqrt{\frac{2E_b}{N_0}}\right) = \frac{1}{2}\text{erfc}\!\left(\sqrt{\frac{E_b}{N_0}}\right)$$
+
+where $Q(x) = \frac{1}{\sqrt{2\pi}}\int_x^\infty e^{-t^2/2}dt$ and $\text{erfc}(x) = \frac{2}{\sqrt{\pi}}\int_x^\infty e^{-t^2}dt$.
+
+Key values:
+
+| $E_b/N_0$ (dB) | $E_b/N_0$ (linear) | BER (uncoded) |
+|---|---|---|
+| 4 | 2.51 | $6.8\times10^{-3}$ |
+| 6 | 3.98 | $1.3\times10^{-3}$ |
+| 8 | 6.31 | $1.1\times10^{-4}$ |
+| 10 | 10.0 | $3.9\times10^{-6}$ |
+| 12 | 15.8 | $5.3\times10^{-8}$ |
+| 17.3 | 53.7 | $\approx 10^{-27}$ |
+
+At the SISP baseline ($E_b/N_0 = 17.3\text{ dB}$), uncoded BPSK is already essentially perfect. The coding discussion below is for the **minimum viable range** (long distance, low SNR).
+
+#### 4.2 Rate-1/2 Convolutional Code (Soft-Decision Viterbi)
+
+The encoder maps each input bit to 2 coded bits using a generator polynomial. Standard NASA-standard rate-1/2 K=7 convolutional code: generators $g_1 = 1011011$, $g_2 = 1111001$ (octal: 133, 171).
+
+The BER after soft-decision Viterbi decoding is bounded by:
+
+$$\text{BER}_{\text{conv}} \leq \frac{1}{k}\sum_{d=d_{\text{free}}}^\infty c_d \cdot Q\!\left(\sqrt{\frac{2d \cdot E_b}{N_0}\cdot R_c}\right)$$
+
+where $d_{\text{free}} = 10$ (free distance of K=7 rate-1/2), $R_c = 1/2$ is the code rate, $k=1$ input bit per trellis step, and $c_d$ are the weight enumerator coefficients. For engineering use, the tight approximation:
+
+$$\text{BER}_{\text{conv}} \approx \frac{1}{2}\text{erfc}\!\left(\sqrt{\frac{E_b}{N_0}\cdot R_c \cdot d_{\text{free}}}\right) = \frac{1}{2}\text{erfc}\!\left(\sqrt{5\,\frac{E_b}{N_0}}\right)$$
+
+The **coding gain** is approximately $10\log_{10}(R_c \cdot d_{\text{free}}) = 10\log_{10}(5) = 7\text{ dB}$ at BER $= 10^{-5}$. In practice it's $\approx 5.5\text{ dB}$ at $10^{-3}$ (the rate-effective penalty).
+
+#### 4.3 Outer Reed-Solomon Code RS(255,223) over GF(2⁸)
+
+The RS outer code operates on **bytes** (symbols), correcting up to $t = 16$ byte errors per codeword of 255 bytes (223 information bytes + 32 redundancy bytes). Code rate $R_{RS} = 223/255 = 0.875$.
+
+After the convolutional inner decoder, the **byte error rate** entering the RS decoder is:
+
+$$P_{byte} = 1 - (1 - \text{BER}_{\text{conv}})^8 \approx 8 \cdot \text{BER}_{\text{conv}}$$
+
+The RS decoder corrects all patterns with $\leq t = 16$ symbol errors per block. The residual byte error rate after RS decoding:
+
+$$P_{RS} \approx \binom{255}{t+1} P_{byte}^{t+1} (1-P_{byte})^{254-t}$$
+
+For $\text{BER}_{\text{conv}} = 10^{-4}$ (corresponding to $E_b/N_0 \approx 5\text{ dB}$ after convolutional coding):
+
+$$P_{byte} \approx 8\times10^{-4}, \quad P_{RS} \approx \binom{255}{17}(8\times10^{-4})^{17} \approx 10^{-32}$$
+
+The concatenated scheme (conv + RS) is essentially **perfect** for $E_b/N_0 \geq 4.5\text{ dB}$. The total code rate: $R_{total} = R_c \times R_{RS} = 0.5 \times 0.875 = 0.4375$.
+
+---
+
+### 5. Packet Error Rate (PER) for SISP Messages
+
+Given a coded BER $p_b$, the probability that an $L$-bit packet contains **at least one uncorrected bit error**:
+
+$$\text{PER}(L, p_b) = 1 - (1 - p_b)^L$$
+
+For small $p_b$: $\text{PER} \approx L \cdot p_b$.
+
+SISP packet sizes (current codebase):
+
+- The protocol header is 5 bytes.
+- Per-service payload lengths are defined by the serializer (`serialize_payload(...)`).
+- The link-layer transport in the C++ implementation uses a **fixed 64-byte frame** (512 uncoded bits) with padding and a frame checksum over the whole frame.
+
+Useful “header + payload” sizes (before the 64-byte framing):
+
+| Message type | Header + payload (bytes) | Uncoded bits |
+|---|---:|---:|
+| CORRECTION_REQ | $5 + 3 = 8$ | 64 |
+| CORRECTION_RSP | $5 + 17 = 22$ | 176 |
+| RELAY_REQ | $5 + 5 = 10$ | 80 |
+| DOWNLINK_ACK | $5 + 4 = 9$ | 72 |
+| FAILURE | $5 + 3 = 8$ | 64 |
+
+On-air in the current transport framing:
+
+| Item | Bytes | Uncoded bits |
+|---|---:|---:|
+| Fixed transport frame | 64 | 512 |
+
+The **minimum viable $E_b/N_0$** is defined as the point where $\text{PER} < 10^{-4}$ for a correction-scale exchange. For the concatenated scheme, a commonly used engineering target is:
+
+$$\left.\frac{E_b}{N_0}\right\vert_{\text{min viable}} \approx 4.5\text{ dB (concatenated)} \quad \text{vs} \quad 8\text{ dB (uncoded)}$$
+
+---
+
+### 6. Maximum Service Range — The Neighborhood Radius
+
+Inverting the link budget to find $d_{\max}$ given minimum $E_b/N_0$ (including a pointing-loss factor $L_{point}$ in linear units):
+
+$$d_{\max} = \frac{c}{4\pi f_c}\sqrt{\frac{P_{tx} G_{tx} G_{rx} \cdot L_{point}}{k_B T_{sys} R_b \cdot (E_b/N_0)_{\min}}}$$
+
+Using $P_{tx}=1\text{ W}$ (30 dBm), $f_c=26\text{ GHz}$, $T_{sys}=280\text{ K}$, $R_b=100\text{ kbps}$, $(E_b/N_0)_{\min}=4.5\text{ dB}$, and $L_{point}=10^{-2/10}$:
+
+- If $G_{tx}=G_{rx}=10\text{ dBi}$, then $d_{\max} \approx 221\text{ km}$.
+- If $G_{tx}=G_{rx}=23\text{ dBi}$, then $d_{\max} \approx 4{,}406\text{ km}$.
+
+This far exceeds LEO constellation spacing — meaning the physical layer is **not the limiting factor** for Service 1. The actual neighborhood radius is determined by **orbital geometry** (visibility windows, shared footprint) from Module M1, not by link budget.
+
+For UHF (437 MHz, $G_{tx} = G_{rx} = 2\text{ dBi}$) under the same assumptions:
+
+$$d_{\max}^{\text{UHF}} \approx 2{,}082\text{ km}$$
+
+Still larger than typical LEO neighbor spacing ($\leq 2000\text{ km}$). SISP works on **both** Ka-band and UHF — important resilience property.
+
+---
+
+Now the interactive simulation tool:---
+
+### 7. What to Feed Into the Simulation (Module M3 Deliverables)
+
+The three simulation plots this produces for the paper, directly from the math above:
+
+**Plot 1 — BER tab**: Three curves on the same axes (BER vs $E_b/N_0$, 0–14 dB). Uncoded BPSK, rate-1/2 convolutional, concatenated conv+RS. The horizontal dashed line at $10^{-6}$ shows the target. The horizontal gap between the uncoded and concatenated curves at that target line is your **coding gain** (~7 dB) — that's a publishable result.
+
+**Plot 2 — SNR vs distance tab**: Shows your Ka-band link budget as a function of range, with the UHF comparison dashed. The intersection with the 4.5 dB threshold is your **maximum service range** for SISP. Try sliding Tx power up to 37 dBm (5W) — the range extends dramatically. That's the "power budget vs neighborhood size" trade-off plot.
+
+**Plot 3 — PER vs distance tab**: Compare a single-frame exchange (e.g., CORRECTION_REQ) versus a multi-frame transfer (e.g., a downlink data set split into fragments). A multi-frame transfer degrades faster with distance because:
+
+$$\text{PER}_{\text{message}} = 1 - (1 - \text{PER}_{\text{frame}})^{N_{\text{frames}}}$$
+
+These three plots, plus the link budget table and the KPI table from the Simulation Plan (Section 10.2 of the lit review), form the complete M3 output.

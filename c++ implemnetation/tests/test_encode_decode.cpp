@@ -77,6 +77,99 @@ void test_cksm_corruption_detected() {
     ASSERT(err == ErrorCode::ERR_CKSM, "Corrupted checksum detected");
 }
 
+void test_frame_cksm_corruption_detected() {
+    Packet pkt{};
+    pkt.header.svc = ServiceCode::HEARTBEAT;
+    pkt.header.sndr = 0x11;
+    pkt.header.rcvr = 0x22;
+    pkt.header.seq = 0x33;
+    pkt.header.degr = 4;
+    pkt.header.flags = FLAG_OFFGRID;
+
+    Heartbeat hb{};
+    hb.energy_pct = 77;
+    hb.degr = 4;
+    hb.uptime_s = 12345;
+    serialize_payload(hb, pkt.payload.data(), MAX_PAYLOAD, pkt.payload_len);
+
+    TransportMeta meta{};
+    meta.datagram_tag = 9;
+    meta.hop_limit = 2;
+
+    uint8_t frame[FRAME_SIZE]{};
+    ErrorCode err = Encoder::encode_frame(pkt, meta, frame);
+    ASSERT(err == ErrorCode::OK, "Encode fixed frame for frame checksum test");
+
+    Packet decoded{};
+    FrameInfo info{};
+    err = Decoder::decode_frame(frame, decoded, info);
+    ASSERT(err == ErrorCode::OK, "Decode valid fixed frame before corruption");
+
+    frame[FRAME_SIZE - 1] ^= 0x5A;
+    err = Decoder::decode_frame(frame, decoded, info);
+    ASSERT(err == ErrorCode::ERR_CKSM, "Corrupted fixed-frame checksum detected");
+}
+
+void test_frame_cksm_recovery_after_drop() {
+    Packet pkt_a{};
+    pkt_a.header.svc = ServiceCode::HEARTBEAT;
+    pkt_a.header.sndr = 0x31;
+    pkt_a.header.rcvr = 0x41;
+    pkt_a.header.seq = 0x10;
+    pkt_a.header.degr = 5;
+    pkt_a.header.flags = FLAG_OFFGRID;
+
+    Heartbeat hb_a{};
+    hb_a.energy_pct = 55;
+    hb_a.degr = 5;
+    hb_a.uptime_s = 1111;
+    serialize_payload(hb_a, pkt_a.payload.data(), MAX_PAYLOAD, pkt_a.payload_len);
+
+    TransportMeta meta_a{};
+    meta_a.datagram_tag = 3;
+    meta_a.hop_limit = 2;
+
+    uint8_t frame_a[FRAME_SIZE]{};
+    ErrorCode err = Encoder::encode_frame(pkt_a, meta_a, frame_a);
+    ASSERT(err == ErrorCode::OK, "Encode frame A for continuation-path test");
+
+    uint8_t corrupted_a[FRAME_SIZE]{};
+    std::memcpy(corrupted_a, frame_a, FRAME_SIZE);
+    corrupted_a[FRAME_SIZE - 1] ^= 0x01;
+
+    Packet decoded{};
+    FrameInfo info{};
+    err = Decoder::decode_frame(corrupted_a, decoded, info);
+    ASSERT(err == ErrorCode::ERR_CKSM, "Corrupted frame A rejected before continuation test");
+
+    Packet pkt_b{};
+    pkt_b.header.svc = ServiceCode::HEARTBEAT;
+    pkt_b.header.sndr = 0x31;
+    pkt_b.header.rcvr = 0x41;
+    pkt_b.header.seq = 0x11;
+    pkt_b.header.degr = 4;
+    pkt_b.header.flags = FLAG_OFFGRID;
+
+    Heartbeat hb_b{};
+    hb_b.energy_pct = 79;
+    hb_b.degr = 4;
+    hb_b.uptime_s = 2222;
+    serialize_payload(hb_b, pkt_b.payload.data(), MAX_PAYLOAD, pkt_b.payload_len);
+
+    TransportMeta meta_b{};
+    meta_b.datagram_tag = 4;
+    meta_b.hop_limit = 2;
+
+    uint8_t frame_b[FRAME_SIZE]{};
+    err = Encoder::encode_frame(pkt_b, meta_b, frame_b);
+    ASSERT(err == ErrorCode::OK, "Encode frame B for continuation-path test");
+
+    err = Decoder::decode_frame(frame_b, decoded, info);
+    ASSERT(err == ErrorCode::OK, "Valid frame B accepted immediately after corrupted frame drop");
+    ASSERT(decoded.header.svc == ServiceCode::HEARTBEAT, "Recovered decode service is HEARTBEAT");
+    ASSERT(decoded.header.seq == 0x11, "Recovered decode uses the valid continuation frame sequence");
+}
+
 void test_broadcast_address_detection() {
     Packet pkt{};
     pkt.header.rcvr = BCAST_ADDR;
@@ -151,7 +244,7 @@ void test_all_svc_codes() {
         pkt.header.svc = static_cast<ServiceCode>(i);
         
         // Skip reserved codes (they should fail decode)
-        if (i >= static_cast<int>(ServiceCode::RESERVED_A) && 
+        if (i >= static_cast<int>(ServiceCode::RESERVED_B) && 
             i <= static_cast<int>(ServiceCode::RESERVED_D)) {
             continue;
         }
@@ -172,6 +265,8 @@ int test_encode_decode() {
 
     test_roundtrip_correction_req();
     test_cksm_corruption_detected();
+    test_frame_cksm_corruption_detected();
+    test_frame_cksm_recovery_after_drop();
     test_broadcast_address_detection();
     test_correction_rsp_with_payload();
     test_all_svc_codes();

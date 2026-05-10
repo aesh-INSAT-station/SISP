@@ -76,13 +76,16 @@ enum class Event : uint8_t {
     CORRECTION_DONE = 20,
     CRITICAL_FAILURE = 21,
     RESET = 22,
+    RX_BORROW_DECISION = 23,
     
-    EVT_COUNT = 23
+    EVT_COUNT = 24
 };
 
 /* ■■ Transaction Context (Section 7.3) ■■■■■■■■■■■■■■■■■■■■■■■■■ */
 
 struct Context {
+    static constexpr uint16_t RELAY_BUFFER_CAPACITY = static_cast<uint16_t>(MAX_FRAGMENT_DATA * 32U);
+
     State state;
     uint8_t self_id;                               // local node id
     uint8_t peer_id;                               // who we're talking to
@@ -98,17 +101,32 @@ struct Context {
     std::array<uint8_t, 256> last_seen_seq;        // last SEQ seen per sender
     std::array<uint32_t, 256> last_seen_ts;        // timestamp of last SEQ
     std::array<uint8_t, 256> last_seen_valid;      // 0/1 valid marker
+
+    // Neighbour trust table (satellite ID -> most recent observed DEGR)
+    std::array<uint8_t, 256> neighbour_degr;       // latest degr seen per sender
+    std::array<uint32_t, 256> neighbour_last_seen; // timestamp of last packet per sender
+
+    // General peer profile table (friendliness + capabilities/health metadata)
+    std::array<uint8_t, 256> peer_friendly;         // 1=trusted/friendly, 0=unknown/untrusted
+    std::array<uint8_t, 256> peer_sensor_mask;      // latest advertised sensor health bitmask
+    std::array<uint8_t, 256> peer_energy_pct;       // latest advertised energy percentage
     
     // Correction-specific
     std::array<std::array<float, 3>, 8> rsp_readings;  // up to 8 neighbours
+    std::array<uint32_t, 8> rsp_timestamps_ms;          // correction response timestamps
     std::array<float, 8> rsp_weights;
     uint8_t rsp_count;
     std::array<float, 3> corrected_value;
+    Vec3Reading own_reading;
     CorrectionFilter* correction_filter;            // External correction algorithm
     CorrectionReq last_correction_req;
     CorrectionRsp last_correction_rsp;
     
     // Relay-specific
+    std::array<uint8_t, RELAY_BUFFER_CAPACITY> relay_tx_storage;
+    uint16_t relay_tx_len;
+    std::array<uint8_t, RELAY_BUFFER_CAPACITY> relay_rx_storage;
+    uint16_t relay_rx_len;
     uint8_t* relay_buf;
     uint16_t relay_buf_len;
     uint8_t frag_total;
@@ -129,19 +147,32 @@ struct Context {
     Heartbeat last_heartbeat;
     Failure last_failure;
     
+    // Failure tracking (avoid cascading critical failures)
+    std::array<uint8_t, 256> known_failed;         // 1 if satellite ID is known to be failed
+    uint8_t last_failed_satellite_id;              // most recent failed satellite
+    
     Context() 
                 : state(State::IDLE), self_id(0), peer_id(0), seq(0), out_seq(0), current_degr(0),
           service(ServiceCode::CORRECTION_REQ),
           timer_deadline_ms(0), retry_count(0), max_retries(3),
-          rsp_count(0), correction_filter(nullptr), relay_buf(nullptr), relay_buf_len(0),
+          rsp_count(0), correction_filter(nullptr), relay_tx_len(0), relay_rx_len(0), relay_buf(nullptr), relay_buf_len(0),
           frag_total(0), frag_sent(0), frag_rcvd_mask(0),
           borrow_sensor(SensorType::MAGNETOMETER), borrow_duration_s(0) {
             last_seen_seq.fill(0);
             last_seen_ts.fill(0);
             last_seen_valid.fill(0);
+            neighbour_degr.fill(0);
+            neighbour_last_seen.fill(0);
+            peer_friendly.fill(0);
+            peer_sensor_mask.fill(0);
+            peer_energy_pct.fill(0);
         rsp_readings.fill({});
+        rsp_timestamps_ms.fill(0);
         rsp_weights.fill(0.0f);
         corrected_value.fill(0.0f);
+        own_reading = {};
+        relay_tx_storage.fill(0);
+        relay_rx_storage.fill(0);
         last_correction_req = {};
         last_correction_rsp = {};
         last_relay_req = {};
@@ -152,6 +183,8 @@ struct Context {
         last_status = {};
         last_heartbeat = {};
         last_failure = {};
+        known_failed.fill(0);
+        last_failed_satellite_id = 0;
     }
 };
 
