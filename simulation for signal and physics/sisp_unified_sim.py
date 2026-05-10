@@ -20,7 +20,7 @@ plt.rcParams['grid.color'] = '#222222'
 plt.rcParams['text.color'] = '#ffffff'
 plt.rcParams['xtick.color'] = '#888888'
 plt.rcParams['ytick.color'] = '#888888'
-plt.rcParams['axes.prop_cycle'] = plt.cycler(color=['#00a2ff', '#00d4ff', '#0070bb', '#5d9cff'])
+
 
 try:
     from skyfield.api import load, EarthSatellite, wgs84
