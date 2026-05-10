@@ -11,6 +11,17 @@ import matplotlib.pyplot as plt
 from scipy.special import erfc
 from scipy.stats import binom
 
+# Apply Dark Theme to Matplotlib
+plt.style.use('dark_background')
+plt.rcParams['axes.facecolor'] = '#0a0a0a'
+plt.rcParams['figure.facecolor'] = '#0a0a0a'
+plt.rcParams['axes.edgecolor'] = '#333333'
+plt.rcParams['grid.color'] = '#222222'
+plt.rcParams['text.color'] = '#ffffff'
+plt.rcParams['xtick.color'] = '#888888'
+plt.rcParams['ytick.color'] = '#888888'
+
+
 try:
     from skyfield.api import load, EarthSatellite, wgs84
 
@@ -435,6 +446,90 @@ def energy_from_events(
 # =============================================================================
 
 st.set_page_config(page_title="SISP Unified Simulation", layout="wide")
+
+# Custom Premium Theme: Black and Blue
+st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap');
+    
+    :root {
+        --primary: #00a2ff;
+        --bg-dark: #0a0a0a;
+        --card-bg: rgba(255, 255, 255, 0.03);
+    }
+    
+    html, body, [data-testid="stAppViewContainer"] {
+        background-color: var(--bg-dark);
+        color: #ffffff;
+        font-family: 'Outfit', sans-serif;
+    }
+    
+    [data-testid="stSidebar"] {
+        background-color: #0d0d0d;
+        border-right: 1px solid rgba(0, 162, 255, 0.2);
+    }
+    
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+        background-color: transparent;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: var(--card-bg);
+        border-radius: 8px 8px 0px 0px;
+        color: #888;
+        border: none;
+        padding: 10px 20px;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background-color: rgba(0, 162, 255, 0.1) !important;
+        color: var(--primary) !important;
+        border-bottom: 2px solid var(--primary) !important;
+    }
+    
+    h1, h2, h3 {
+        color: var(--primary) !important;
+        font-weight: 600 !important;
+    }
+    
+    .stButton>button {
+        background-color: var(--primary);
+        color: white;
+        border-radius: 8px;
+        border: none;
+        box-shadow: 0 4px 15px rgba(0, 162, 255, 0.3);
+    }
+    
+    /* Premium accents for numeric inputs and sliders */
+    .stNumberInput, .stSlider {
+        background: rgba(0, 162, 255, 0.05);
+        border-radius: 8px;
+        padding: 10px;
+        border: 1px solid rgba(0, 162, 255, 0.1);
+    }
+    
+    /* Fix for "circleds" and "fill" on sliders */
+    .stSlider [role="slider"] {
+        background-color: var(--primary) !important;
+        border-color: var(--primary) !important;
+    }
+    .stSlider [data-baseweb="slider"] > div > div > div {
+        background-color: var(--primary) !important;
+    }
+    .stSlider div[data-testid="stThumbValue"] {
+        color: var(--primary) !important;
+    }
+    
+    /* JSON block and metric values */
+    .stJson span, [data-testid="stMetricValue"] {
+        color: var(--primary) !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 st.title("SISP Unified Simulation: Geometry + PHY + Protocol Energy")
 st.caption(
     "Merged app: geometry (LoS/Doppler), BER/PER, timing+energy, message energy attribution, KPI comparisons."
@@ -454,6 +549,9 @@ coding_modes = {
 }
 
 with st.sidebar:
+    # Logo placement
+    st.image("simulation for signal and physics/logo.png", width="stretch")
+    st.markdown("---")
     st.header("Common Inputs")
 
     st.subheader("RF / Channel")
@@ -642,7 +740,7 @@ with tab_geo:
 
         # Shade non-LoS periods
         for ax in (ax1, ax2):
-            ax.fill_between(x_min, ax.get_ylim()[0], ax.get_ylim()[1], where=~los_clear, color="gray", alpha=0.1)
+            ax.fill_between(x_min, ax.get_ylim()[0], ax.get_ylim()[1], where=~los_clear, color="#00a2ff", alpha=0.05)
 
         st.pyplot(fig)
 
