@@ -159,8 +159,9 @@ SERVICES = {
     0xF: "FAILURE",
 }
 
-EVT_FAULT_DETECTED = 10
-EVT_ENERGY_LOW = 11
+# Must match `SISP::Event` values in `c++ implemnetation/include/sisp_state_machine.hpp`.
+EVT_FAULT_DETECTED = 12
+EVT_ENERGY_LOW = 14
 EVT_CRITICAL_FAILURE = 21
 
 
