@@ -1,0 +1,415 @@
+======================================================================
+SISP Python Test Suite — Sun May 10 19:59:20 WCAST 2026
+======================================================================
+
+----------------------------------------------------------------------
+TEST: validate_bpsk_awgn.py
+CMD:  python 'simulation for signal and physics/validate_bpsk_awgn.py' --bits 500000
+----------------------------------------------------------------------
+Eb/N0(dB)    BER_theory       BER_sim    errors
+-----------------------------------------------
+    0.00    7.8650e-02    7.8966e-02     39483
+    2.00    3.7506e-02    3.7066e-02     18533
+    4.00    1.2501e-02    1.2468e-02      6234
+    6.00    2.3883e-03    2.4480e-03      1224
+    8.00    1.9091e-04    1.8200e-04        91
+   10.00    3.8721e-06    0.0000e+00         0
+EXIT: 0
+
+----------------------------------------------------------------------
+TEST: test_dual_phy_437.py
+CMD:  python all_tests/test_dual_phy_437.py
+----------------------------------------------------------------------
+========================================================================
+SISP Dual-PHY 437 MHz Test (CONTROL_437_NARROW vs BULK_437_WIDE)
+========================================================================
+
+[TEST 1] Correction scenario: all frames must use CONTROL_437_NARROW
+    svc=CORRECTION_REQ       sndr=1 rcvr=255 phy=CTRL_NARROW
+    svc=CORRECTION_RSP       sndr=2 rcvr=1 phy=CTRL_NARROW
+    svc=CORRECTION_RSP       sndr=3 rcvr=1 phy=CTRL_NARROW
+
+[TEST 2] Failure broadcast: must use CONTROL_437_NARROW
+    svc=FAILURE sndr=2 rcvr=0xFF phy=CTRL_NARROW
+
+[TEST 3] Relay scenario: REQ/ACCEPT use CTRL_NARROW, DOWNLINK_DATA may use BULK_WIDE
+    Relay ctrl frames: 3 total, 3 on CTRL_NARROW
+    Data frames:       1 total, 1 on BULK_WIDE
+    DOWNLINK_DATA: 100% on BULK_WIDE (CTRL_NARROW fallback if peer capability not yet exchanged)
+
+[TEST 4] PHY profile values are in valid range {0,1}
+    Total frames captured: 4, invalid PHY: 0
+
+[TEST 5] Control services never use BULK_WIDE profile
+    Control frames scanned: 5, BULK_WIDE violations: 0
+
+========================================================================
+Results:
+  PASS  CORRECTION frames captured
+  PASS  All CORRECTION frames use PHY=CTRL_NARROW (0x00)
+  PASS  FAILURE frames captured
+  PASS  All FAILURE frames use PHY=CTRL_NARROW (0x00)
+  PASS  Relay REQ/ACCEPT/REJECT use CTRL_NARROW
+  PASS  DOWNLINK_DATA frames present
+  PASS  All frames have valid PHY profile (0 or 1)
+  PASS  No control-service frame uses PHY=BULK_WIDE
+
+  PASSED: 8  FAILED: 0
+========================================================================
+EXIT: 0
+
+----------------------------------------------------------------------
+TEST: test_no_cascade.py
+CMD:  python all_tests/test_no_cascade.py
+----------------------------------------------------------------------
+
+================================================================================
+TEST: NO CASCADING FAILURES (Modified State Machine)
+================================================================================
+
+[SETUP] Create 5-satellite constellation
+Traceback (most recent call last):
+  File "C:\Users\iyed1\OneDrive\Desktop\work\HACKATHON\aesh2026\SISP\all_tests\test_no_cascade.py", line 145, in <module>
+    print(f"\u2713 Created satellites: {list(sat_contexts.keys())}")
+  File "C:\Users\iyed1\AppData\Local\Programs\Python\Python311\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2713' in position 0: character maps to <undefined>
+EXIT: 1
+
+----------------------------------------------------------------------
+TEST: test_correction_propagation.py
+CMD:  python all_tests/test_correction_propagation.py
+----------------------------------------------------------------------
+
+=== STEP 2: Correction Propagation Test ===
+
+[Inject] sat1 FAULT_DETECTED
+[TX] CORRECTION_REQ  sndr=01 rcvr=FF seq=  1 degr= 0 dst=FF
+[TX] CORRECTION_RSP  sndr=02 rcvr=01 seq=  1 degr= 0 dst=01
+[TX] CORRECTION_RSP  sndr=03 rcvr=01 seq=  1 degr= 0 dst=01
+[Pump] injected frames: 4
+
+[Advance] 5.1s to trigger correction compute
+
+[Final snapshot]
+sat1: state=CORR_COMPUTING degr=0 corrected=(0.00, 0.00, 0.00) neigh_degr={}
+sat2: state=CORR_RESPONDING degr=0 corrected=(0.00, 0.00, 0.00) neigh_degr={}
+sat3: state=CORR_RESPONDING degr=0 corrected=(0.00, 0.00, 0.00) neigh_degr={}
+
+=== END STEP 2 ===
+
+EXIT: 0
+
+----------------------------------------------------------------------
+TEST: test_borrow_addressing_flow.py
+CMD:  python all_tests/test_borrow_addressing_flow.py
+----------------------------------------------------------------------
+
+==========================================================================================
+CASE 1: Multiple answers delivered (first accepted, later answer effectively ignored)
+==========================================================================================
+Provider A paragraph (before): Orbit stable. Borrow camera. Send map now.
+Provider B paragraph (before): Backup ready. Alternate camera data online.
+
+[STEP] Borrower sat1 issues BORROW_REQ (GS_VISIBLE event)
+[TX] svc=BORROW_REQ      sndr=01 rcvr=FF seq=  1 dst=FF targets=[2, 3]
+[TX] svc=BORROW_DECISION sndr=02 rcvr=01 seq=  1 dst=01 targets=[1] decision=(accepted=1, duration_s=60)
+[TX] svc=BORROW_DECISION sndr=03 rcvr=01 seq=  1 dst=01 targets=[1] decision=(accepted=1, duration_s=60)
+Borrower state after decisions: BORROW_RECEIVING (14)
+Decision responses transmitted to sat1: 2
+Decision responses delivered to sat1: [2, 3]
+Accepted provider selected by first delivered decision: sat2
+
+[STEP] Trigger SENSOR_READ_DONE only on accepted provider sat2
+[TX] svc=DOWNLINK_DATA   sndr=02 rcvr=01 seq=  2 dst=01 targets=[1] fragment=(1/1, len=42) text='Orbit stable. Borrow camera. Send map now.'
+Provider state: BORROW_DONE (15)
+Borrower state: BORROW_DONE (15)
+Borrower paragraph (after): Orbit stable. Borrow camera. Send map now.
+
+Result: communication uses explicit unicast addresses after acceptance
+- BORROW_REQ uses broadcast target 0xFF
+- BORROW_DECISION uses unicast target sat1
+- DOWNLINK_DATA then comes from accepted sat2 to sat1
+
+==========================================================================================
+CASE 2: Multiple answers modeled, second answer dropped
+==========================================================================================
+Provider A paragraph (before): Orbit stable. Borrow camera. Send map now.
+Provider B paragraph (before): Backup ready. Alternate camera data online.
+
+[STEP] Borrower sat1 issues BORROW_REQ (GS_VISIBLE event)
+[TX] svc=BORROW_REQ      sndr=01 rcvr=FF seq=  1 dst=FF targets=[2, 3]
+[TX] svc=BORROW_DECISION sndr=02 rcvr=01 seq=  1 dst=01 targets=[1] decision=(accepted=1, duration_s=60)
+[TX] svc=BORROW_DECISION sndr=03 rcvr=01 seq=  1 dst=01 targets=[1] decision=(accepted=1, duration_s=60)
+[NET] dropping second BORROW_DECISION (from sat3 to sat1)
+Borrower state after decisions: BORROW_RECEIVING (14)
+Decision responses transmitted to sat1: 1
+Decision responses delivered to sat1: [2]
+Accepted provider selected by first delivered decision: sat2
+
+[STEP] Trigger SENSOR_READ_DONE only on accepted provider sat2
+[TX] svc=DOWNLINK_DATA   sndr=02 rcvr=01 seq=  2 dst=01 targets=[1] fragment=(1/1, len=42) text='Orbit stable. Borrow camera. Send map now.'
+Provider state: BORROW_DONE (15)
+Borrower state: BORROW_DONE (15)
+Borrower paragraph (after): Orbit stable. Borrow camera. Send map now.
+Dropped second decision sender: sat3
+
+Result: communication uses explicit unicast addresses after acceptance
+- BORROW_REQ uses broadcast target 0xFF
+- BORROW_DECISION uses unicast target sat1
+- DOWNLINK_DATA then comes from accepted sat2 to sat1
+EXIT: 0
+
+----------------------------------------------------------------------
+TEST: test_relay_text_resilience.py
+CMD:  python all_tests/test_relay_text_resilience.py
+----------------------------------------------------------------------
+
+=== Relay Text Resilience Scenario (Multi-Fragment) ===
+Goal: relink text through checksum errors, out-of-order fragments, and duplicate replay
+
+[TX] svc=RELAY_REQ       sndr=01 rcvr=FF seq=  1 degr= 0 dst=FF targets=[2]
+[TX] svc=RELAY_ACCEPT    sndr=02 rcvr=01 seq=  1 degr= 0 dst=01 targets=[1]
+[TX] svc=DOWNLINK_DATA   sndr=01 rcvr=02 seq=  2 degr= 0 dst=02 targets=[2]
+
+[After relay handshake]
+  sat1: RELAY_SENDING (7)
+  sat2: RELAY_RECEIVING (10)
+
+Captured DOWNLINK_DATA frames: 1
+Frame payload capacity=49 bytes, max fragment data=43 bytes
+Target text length: 109 bytes over 3 fragments
+
+Injecting manipulated delivery plan:
+  Step 1: Corrupted mid fragment idx=1 seq=3 (checksum drop expected)
+  Step 2: Valid tail fragment idx=2 seq=4 (out-of-order)
+  Step 3: Valid head fragment idx=0 seq=2
+  Step 4: Valid continuation mid fragment idx=1 seq=3
+  Step 5: Duplicate replay mid fragment idx=1 seq=3 (should be dropped)
+[TX] svc=DOWNLINK_ACK    sndr=02 rcvr=01 seq=  2 degr= 0 dst=01 targets=[1]
+[TX] svc=DOWNLINK_ACK    sndr=01 rcvr=02 seq=  3 degr= 0 dst=02 targets=[2]
+
+[After completion events]
+  sat1: RELAY_DONE (9)
+  sat2: IDLE (0)
+
+Recovered raw storage length: 225 bytes
+Relinked text length: 109 bytes
+Relinked text: seg01:telemetry+relay+correction|seg02:telemetry+relay+correction|seg03:telemetry+relay+correction|seg04:tele
+
+PASS: Multi-fragment text relinked after checksum drop, out-of-order delivery, and duplicate replay
+EXIT: 0
+
+----------------------------------------------------------------------
+TEST: test_kalman_gaussian_3sat.py
+CMD:  python all_tests/test_kalman_gaussian_3sat.py
+----------------------------------------------------------------------
+
+=== Kalman 3-Satellite Gaussian Test (C++ engine via DLL) ===
+Ground truth vector: (42.000, -17.500, 9.250)
+Requester: sat1, Responders: sat2/sat3
+Running two profiles: nominal noise and large sensor-fault noise
+
+--- Profile: nominal | sigma=2.0 | rounds=20 ---
+round= 1 raw=(  42.079, -17.390,   9.976) corr=(  39.411, -16.950,   8.816) raw_err=  0.739 corr_err=  2.682
+round= 2 raw=(  40.280, -15.645,   9.973) corr=(  42.224, -17.181,   9.798) raw_err=  2.631 corr_err=  0.672
+round= 3 raw=(  41.949, -19.630,  10.902) corr=(  43.070, -17.397,  10.181) raw_err=  2.696 corr_err=  1.422
+round= 4 raw=(  42.734, -17.922,   6.367) corr=(  43.992, -18.280,   8.999) raw_err=  3.004 corr_err=  2.154
+round= 5 raw=(  43.277, -18.421,   5.979) corr=(  44.107, -18.186,   7.564) raw_err=  3.630 corr_err=  2.784
+round=10 raw=(  41.061, -19.906,   7.917) corr=(  42.376, -19.452,   9.111) raw_err=  2.906 corr_err=  1.993
+round=20 raw=(  41.775, -15.224,   9.221) corr=(  42.745, -16.959,   9.227) raw_err=  2.287 corr_err=  0.921
+nominal avg raw error      : 2.5118
+nominal avg corrected error: 1.4637
+nominal steady-state raw   : 2.5024
+nominal steady-state corr  : 1.3039
+
+--- Profile: large_fault | sigma=25.0 | rounds=30 ---
+round= 1 raw=(  52.452,   5.934,  22.114) corr=(  46.347,  -7.390,  14.294) raw_err= 28.704 corr_err= 12.106
+round= 2 raw=(  64.976, -41.418, -19.829) corr=(  53.393,  -9.140,   9.655) raw_err= 44.109 corr_err= 14.137
+round= 3 raw=(  19.518,  -0.543, -13.866) corr=(  48.641, -14.164,  -1.714) raw_err= 36.433 corr_err= 13.245
+round= 4 raw=(  33.966, -86.343,   0.222) corr=(  38.213, -14.370,  -6.184) raw_err= 69.896 corr_err= 16.197
+round= 5 raw=(  36.912, -43.870,  25.238) corr=(  35.516, -30.151,   4.813) raw_err= 31.255 corr_err= 14.892
+round=15 raw=(  38.615,  -4.495,  13.569) corr=(  37.755, -20.976,   8.260) raw_err= 14.115 corr_err=  5.575
+round=30 raw=(   3.974, -15.212, -12.899) corr=(  33.192, -16.683,  -9.612) raw_err= 44.066 corr_err= 20.834
+large_fault avg raw error      : 25.9343
+large_fault avg corrected error: 9.4132
+large_fault steady-state raw   : 22.7053
+large_fault steady-state corr  : 8.4727
+
+=== Summary ===
+Nominal steady-state raw/corr : 2.5024 / 1.3039
+Large-fault steady-state raw/corr : 22.7053 / 8.4727
+Result: Kalman correction improves both nominal and large-fault profiles.
+EXIT: 0
+
+----------------------------------------------------------------------
+TEST: test_noise_weighting_and_algorithms.py
+CMD:  python all_tests/test_noise_weighting_and_algorithms.py
+----------------------------------------------------------------------
+=== Noise/Weight/Algorithm Comparison (C++ correction engine) ===
+DEGR model: inverse_error (higher gaussian error -> higher DEGR / lower trust)
+Includes very large-error regimes to validate correction robustness under strong sensor faults
+Rounds per case: 90
+
+--- balanced responders, inverse-error DEGR ---
+sigma  algo             raw(avg)  corr(avg) raw(ss)  corr(ss) gain(ss)
+-----  ---------------  --------  --------- -------  -------- -------
+  2.0  raw                 2.190      1.945   2.194     1.925   0.269
+  2.0  weighted_median     2.190      2.395   2.194     2.338  -0.144
+  2.0  kalman              2.190      1.128   2.194     1.079   1.115
+  2.0  nis_gated_kalman     2.190      1.128   2.194     1.079   1.115
+  2.0  hybrid              2.190      1.542   2.194     1.032   1.162
+  5.0  raw                 5.413      4.751   5.156     4.575   0.581
+  5.0  weighted_median     5.413      6.065   5.156     6.129  -0.972
+  5.0  kalman              5.413      2.786   5.156     2.533   2.623
+  5.0  nis_gated_kalman     5.413      2.786   5.156     2.533   2.623
+  5.0  hybrid              5.413      3.359   5.156     2.898   2.258
+  8.0  raw                 8.895      8.072   8.313     7.637   0.676
+  8.0  weighted_median     8.895     10.232   8.313     9.875  -1.561
+  8.0  kalman              8.895      4.659   8.313     4.361   3.952
+  8.0  nis_gated_kalman     8.895      4.659   8.313     4.361   3.952
+  8.0  hybrid              8.895      4.893   8.313     4.535   3.778
+ 12.0  raw                13.542     12.137  13.730    12.351   1.379
+ 12.0  weighted_median    13.542     14.466  13.730    14.839  -1.109
+ 12.0  kalman             13.542      6.692  13.730     6.473   7.257
+ 12.0  nis_gated_kalman    13.542      6.692  13.730     6.473   7.257
+ 12.0  hybrid             13.542      6.879  13.730     5.948   7.782
+ 16.0  raw                19.398     16.545  18.453    15.690   2.763
+ 16.0  weighted_median    19.398     20.058  18.453    20.132  -1.679
+ 16.0  kalman             19.398      8.798  18.453     7.773  10.680
+ 16.0  nis_gated_kalman    19.398      8.798  18.453     7.773  10.680
+ 16.0  hybrid             19.398      8.609  18.453     8.021  10.432
+ 20.0  raw                20.733     17.985  21.725    18.557   3.168
+ 20.0  weighted_median    20.733     21.896  21.725    21.183   0.542
+ 20.0  kalman             20.733      9.478  21.725     9.403  12.322
+ 20.0  nis_gated_kalman    20.733      9.529  21.725     9.403  12.322
+ 20.0  hybrid             20.733     11.310  21.725     9.575  12.150
+ 30.0  raw                33.743     29.980  34.198    30.074   4.124
+ 30.0  weighted_median    33.743     36.329  34.198    36.131  -1.933
+ 30.0  kalman             33.743     15.979  34.198    15.644  18.554
+ 30.0  nis_gated_kalman    33.743     15.979  34.198    15.644  18.554
+ 30.0  hybrid             33.743     15.860  34.198    15.655  18.543
+ 40.0  raw                48.817     43.193  47.079    42.044   5.035
+ 40.0  weighted_median    48.817     50.946  47.079    50.943  -3.864
+ 40.0  kalman             48.817     25.229  47.079    24.961  22.118
+ 40.0  nis_gated_kalman    48.817     25.229  47.079    24.961  22.118
+ 40.0  hybrid             48.817     24.420  47.079    24.201  22.878
+ 60.0  raw                66.287     59.439  66.472    59.751   6.721
+ 60.0  weighted_median    66.287     76.617  66.472    78.811 -12.339
+ 60.0  kalman             66.287     35.380  66.472    33.633  32.839
+ 60.0  nis_gated_kalman    66.287     35.342  66.472    33.633  32.839
+ 60.0  hybrid             66.287     38.271  66.472    39.980  26.492
+
+--- one healthy responder + one broken responder, inverse-error DEGR ---
+sigma  algo             raw(avg)  corr(avg) raw(ss)  corr(ss) gain(ss)
+-----  ---------------  --------  --------- -------  -------- -------
+  5.0  raw                 4.397      3.725   4.334     3.668   0.666
+  5.0  weighted_median     4.397      3.960   4.334     3.844   0.490
+  5.0  kalman              4.397      2.132   4.334     2.066   2.268
+  5.0  nis_gated_kalman     4.397      2.132   4.334     2.066   2.268
+  5.0  hybrid              4.397      1.950   4.334     1.507   2.827
+ 10.0  raw                 7.931      7.464   7.670     7.591   0.079
+ 10.0  weighted_median     7.931      7.832   7.670     7.543   0.127
+ 10.0  kalman              7.931      3.892   7.670     3.543   4.127
+ 10.0  nis_gated_kalman     7.931      3.892   7.670     3.543   4.127
+ 10.0  hybrid              7.931      4.719   7.670     4.018   3.652
+ 20.0  raw                16.497     15.043  16.413    15.494   0.919
+ 20.0  weighted_median    16.497     14.939  16.413    16.317   0.096
+ 20.0  kalman             16.497      7.932  16.413     7.879   8.534
+ 20.0  nis_gated_kalman    16.497      9.405  16.413     9.324   7.089
+ 20.0  hybrid             16.497      8.310  16.413     8.648   7.765
+ 40.0  raw                30.083     29.455  29.990    28.257   1.734
+ 40.0  weighted_median    30.083     29.474  29.990    30.412  -0.422
+ 40.0  kalman             30.083     16.571  29.990    15.021  14.969
+ 40.0  nis_gated_kalman    30.083     27.581  29.990    24.513   5.478
+ 40.0  hybrid             30.083     15.758  29.990    15.853  14.137
+ 60.0  raw                49.338     43.390  51.985    44.157   7.827
+ 60.0  weighted_median    49.338     39.166  51.985    41.330  10.655
+ 60.0  kalman             49.338     23.886  51.985    24.670  27.315
+ 60.0  nis_gated_kalman    49.338     41.617  51.985    43.521   8.463
+ 60.0  hybrid             49.338     22.493  51.985    23.310  28.675
+ 90.0  raw                71.755     65.105  72.909    65.232   7.678
+ 90.0  weighted_median    71.755     63.188  72.909    66.531   6.379
+ 90.0  kalman             71.755     34.713  72.909    33.751  39.159
+ 90.0  nis_gated_kalman    71.755     58.368  72.909    57.391  15.518
+ 90.0  hybrid             71.755     40.115  72.909    41.310  31.599
+
+--- outlier stress scenarios (inverse-error DEGR) ---
+scenario                      algo             raw(ss)  corr(ss) gain(ss)
+----------------------------  ---------------  -------  -------- --------
+burst_5pct_heavy              raw               13.543     8.673    4.870
+burst_5pct_heavy              weighted_median   13.543     9.924    3.620
+burst_5pct_heavy              kalman            13.543     4.011    9.532
+burst_5pct_heavy              nis_gated_kalman   13.543     3.915    9.629
+burst_5pct_heavy              hybrid            13.543     3.917    9.627
+burst_15pct_moderate          raw               19.245    12.949    6.296
+burst_15pct_moderate          weighted_median   19.245    15.734    3.511
+burst_15pct_moderate          kalman            19.245     6.042   13.203
+burst_15pct_moderate          nis_gated_kalman   19.245     5.990   13.255
+burst_15pct_moderate          hybrid            19.245     6.883   12.362
+persistent_bias_peer3         raw               31.204    20.306   10.899
+persistent_bias_peer3         weighted_median   31.204    13.092   18.112
+persistent_bias_peer3         kalman            31.204    14.937   16.268
+persistent_bias_peer3         nis_gated_kalman   31.204    31.502   -0.297
+persistent_bias_peer3         hybrid            31.204     9.878   21.327
+mixed_spike_plus_drift        raw               20.604    15.103    5.501
+mixed_spike_plus_drift        weighted_median   20.604    15.692    4.912
+mixed_spike_plus_drift        kalman            20.604     8.326   12.278
+mixed_spike_plus_drift        nis_gated_kalman   20.604     8.246   12.358
+mixed_spike_plus_drift        hybrid            20.604     6.716   13.888
+
+--- Kalman sensitivity to DEGR mapping (healthy vs very noisy responder) ---
+mode                corr(ss)  raw(ss)  gain(ss)
+------------------  --------  -------  --------
+inverse_error         19.057   41.600    22.544
+neutral               22.466   41.600    19.135
+proportional_error    27.851   41.600    13.749
+
+--- Runtime budget check (Python harness upper-bound) ---
+rounds=500 sigma=30.0 elapsed=0.004s avg=0.009 ms/round corrected_ss=15.638
+EXIT: 0
+
+----------------------------------------------------------------------
+TEST: test_full_message_propagation_sensor_correction.py
+CMD:  python all_tests/test_full_message_propagation_sensor_correction.py
+----------------------------------------------------------------------
+
+=== Full Message Propagation + Sensor Correction ===
+Algorithms under test: weighted_median, kalman, hybrid
+weighted_median  propagation=PASS sender_state= 9 correction_ss_err= 15.459
+kalman           propagation=PASS sender_state= 9 correction_ss_err=  5.618
+hybrid           propagation=PASS sender_state= 9 correction_ss_err=  7.245
+
+Correction ranking (lower steady-state error is better):
+1. kalman             5.618
+2. hybrid             7.245
+3. weighted_median   15.459
+
+PASS: full message propagation and 3 correction alternatives verified.
+EXIT: 0
+
+----------------------------------------------------------------------
+TEST: test_integration_matrix_it02_it03_it05_it06.py
+CMD:  python all_tests/test_integration_matrix_it02_it03_it05_it06.py
+----------------------------------------------------------------------
+
+=== Integration Matrix Tests: IT-02 / IT-03 / IT-05 / IT-06 ===
+
+[IT-02] DEGR weighting with mixed health
+  PASS: bad_weight=0.067, dist_to_healthy=1.146, dist_to_bad=51.568
+
+[IT-03] Relay across visibility gap
+  PASS: sat2 relay path established through sat4 with payload buffered
+
+[IT-05] 30-day correction quality
+  RMSE raw=8.909, corrected=0.504, improvement=94.3%
+  PASS: RMSE raw=8.909, corrected=0.504, improvement=94.3%
+
+[IT-06] Packet loss resilience (10% drop, 7 days, 5 satellites)
+  RMSE raw=8.290, corrected=1.197, completed=7/7
+  PASS: completed=7/7, RMSE raw=8.290, corrected=1.197
+
+ALL MATRIX TESTS PASSED
+EXIT: 0
+

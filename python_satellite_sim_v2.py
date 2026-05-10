@@ -68,12 +68,12 @@ lib.sim_get_last_failed_satellite.argtypes = [ctypes.c_void_p]
 lib.sim_get_last_failed_satellite.restype = ctypes.c_uint8
 
 # ============================================================================
-# EVENT CODES
+# EVENT CODES — must match SISP::Event enum in sisp_state_machine.hpp
 # ============================================================================
-EVT_FAULT_DETECTED = 10
-EVT_ENERGY_LOW = 11
-EVT_CRITICAL_FAILURE = 21
-EVT_TIMER_EXPIRED = 13
+EVT_FAULT_DETECTED = 12   # SISP::Event::FAULT_DETECTED
+EVT_ENERGY_LOW = 14        # SISP::Event::ENERGY_LOW
+EVT_CRITICAL_FAILURE = 21  # SISP::Event::CRITICAL_FAILURE
+EVT_TIMER_EXPIRED = 13     # SISP::Event::TIMER_EXPIRED
 
 # ============================================================================
 # STATE CODES

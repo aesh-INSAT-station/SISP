@@ -36,6 +36,7 @@ except Exception:
 
 C_MPS = 299_792_458.0
 K_B = 1.380649e-23
+T0_K = 290.0  # IEEE standard reference temperature
 
 FRAME_BYTES = 64
 FRAME_BITS = FRAME_BYTES * 8
@@ -45,8 +46,10 @@ R_CONV = 0.5
 R_RS = 223.0 / 255.0
 R_TOTAL = R_CONV * R_RS
 
-# Engineering proxy: constant coding gain for convolutional.
-CONV_GAIN_DB = 10.0 * math.log10(5.0)  # ~7.0 dB
+# K=7 R=1/2 NASA-standard convolutional code free distance
+CONV_K7_D_FREE = 10
+# Coefficient from spectral distance enumerator for K=7 R=1/2 code (soft Viterbi)
+CONV_K7_COEFF = 36
 
 
 def qfunc(x: np.ndarray) -> np.ndarray:
@@ -54,15 +57,24 @@ def qfunc(x: np.ndarray) -> np.ndarray:
 
 
 def ber_uncoded_awgn(ebn0_db: np.ndarray, modulation: str) -> np.ndarray:
-    """Coherent AWGN BER models (engineering-level).
+    """Rigorous AWGN BER models.
 
-    - BPSK and Gray-coded QPSK share BER vs Eb/N0.
-    - 2FSK models are for orthogonal BFSK.
+    BPSK / QPSK:   P_b = (1/2)·erfc(sqrt(Eb/N0))          — exact coherent AWGN
+    GMSK BT=0.3:   P_b = (1/2)·erfc(sqrt(0.68·Eb/N0))     — Murota-Hirade 1981, §III
+                   α_BT=0.68 captures inter-symbol interference from BT filtering
+    2-FSK coh.:    P_b = Q(sqrt(Eb/N0))                     — orthogonal coherent FSK
+    2-FSK noncoh.: P_b = (1/2)·exp(−Eb/(2·N0))             — exact noncoherent FSK
     """
     ebn0_lin = 10.0 ** (ebn0_db / 10.0)
 
     if modulation in ("BPSK", "QPSK"):
         return 0.5 * erfc(np.sqrt(ebn0_lin))
+
+    if modulation == "GMSK_BT03":
+        # GMSK BT=0.3 coherent detection — Murota & Hirade (1981)
+        # α_BT ≈ 0.68 for BT=0.3; equals 0.85 for BT→∞ (BPSK limit)
+        alpha_bt = 0.68
+        return 0.5 * erfc(np.sqrt(alpha_bt * ebn0_lin))
 
     if modulation == "2FSK_COH":
         return qfunc(np.sqrt(ebn0_lin))
@@ -73,17 +85,53 @@ def ber_uncoded_awgn(ebn0_db: np.ndarray, modulation: str) -> np.ndarray:
     raise ValueError(f"Unknown modulation: {modulation}")
 
 
+def _ber_conv_k7_r12(ebn0_db: np.ndarray, modulation: str) -> np.ndarray:
+    """Post-Viterbi BER for K=7 R=1/2 code via union bound (soft decision).
+
+    For BPSK/QPSK/GMSK through AWGN — Heller & Jacobs (1971), d_free=10:
+        P_b ≤ 36 · Q(sqrt(10 · Eb/N0))
+
+    For FSK, coherent or noncoherent, the channel BER p is first computed,
+    then the union bound is applied on the coded sequence BER using the
+    soft-decision approximation with the channel error probability.
+    """
+    ebn0_lin = 10.0 ** (ebn0_db / 10.0)
+
+    if modulation in ("BPSK", "QPSK", "GMSK_BT03"):
+        # Soft-decision Viterbi union bound (Heller & Jacobs 1971)
+        # d_free = 10, leading term coefficient = 36
+        return np.minimum(
+            CONV_K7_COEFF * qfunc(np.sqrt(CONV_K7_D_FREE * ebn0_lin)),
+            0.5,
+        )
+
+    # For FSK: hard-decision bound using channel BER p
+    # P_b ≤ Σ_{d=d_free}^{∞} c_d · B(d) where B(d) ≈ (4p(1-p))^(d/2)
+    # Leading term approximation: P_b ≤ 36 · (4p(1−p))^5
+    p_ch = ber_uncoded_awgn(ebn0_db, modulation)
+    term = np.clip(4.0 * p_ch * (1.0 - p_ch), 0.0, 1.0) ** (CONV_K7_D_FREE / 2.0)
+    return np.minimum(CONV_K7_COEFF * term, 0.5)
+
+
 def ber_post_decoding(ebn0_db: np.ndarray, modulation: str, coding: str) -> np.ndarray:
+    """Post-FEC BER.
+
+    CONV uses the K=7 R=1/2 soft-Viterbi union bound (replaces constant 7 dB proxy).
+    CONV_RS cascades the Viterbi BER into the RS(255,223) byte-error model.
+    """
     if coding == "NONE":
         return ber_uncoded_awgn(ebn0_db, modulation)
 
     if coding == "CONV":
-        return ber_uncoded_awgn(ebn0_db + CONV_GAIN_DB, modulation)
+        return _ber_conv_k7_r12(ebn0_db, modulation)
 
     if coding == "CONV_RS":
-        ber_conv = ber_uncoded_awgn(ebn0_db + CONV_GAIN_DB, modulation)
+        ber_conv = _ber_conv_k7_r12(ebn0_db, modulation)
+        # Byte error probability after Viterbi (assumes i.i.d. residual bits)
         p_byte = 1.0 - (1.0 - ber_conv) ** 8
-        p_fail = binom.sf(16, 255, p_byte)  # P(byte_errors > 16)
+        # RS(255,223): t=16 correctable byte errors; failure if >16 byte errors
+        p_fail = binom.sf(16, 255, p_byte)  # P(N_err > 16)
+        # Failed RS block → effectively random bits (BER→0.5)
         return 0.5 * p_fail
 
     raise ValueError(f"Unknown coding: {coding}")
@@ -99,6 +147,17 @@ def coding_expansion(coding: str) -> float:
     raise ValueError(f"Unknown coding: {coding}")
 
 
+def nf_to_tsys(nf_db: float, t_ant_k: float = 100.0) -> float:
+    """Convert receiver noise figure (dB) + antenna noise temp to system noise temperature.
+
+    T_sys = T_ant + T_rx  where  T_rx = T0·(F−1),  F = 10^(NF/10)
+    T0 = 290 K (IEEE reference).  T_ant ≈ 100 K typical for inter-satellite UHF.
+    """
+    f_lin = 10.0 ** (nf_db / 10.0)
+    t_rx = T0_K * (f_lin - 1.0)
+    return t_ant_k + t_rx
+
+
 def calc_link_budget(
     d_km: np.ndarray,
     p_tx_dbm: float,
@@ -110,14 +169,22 @@ def calc_link_budget(
     r_bps: float,
     pointing_loss_db: float,
     misc_loss_db: float,
+    doppler_margin_db: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Compute SNR and Eb/N0 from free-space link budget.
+
+    doppler_margin_db: additional implementation loss for Doppler compensation
+    (e.g., 1.5 dB for GMSK/GFSK on 12.5 kHz narrow-band ISL at 437 MHz).
+    """
     d_m = d_km * 1000.0
     l_fs_db = 20.0 * np.log10(d_m) + 20.0 * np.log10(f_hz) + 20.0 * np.log10(4.0 * np.pi / C_MPS)
 
     n_w = K_B * t_sys_k * b_hz
     n_dbm = 10.0 * np.log10(n_w) + 30.0
 
-    snr_db = p_tx_dbm + g_tx_dbi + g_rx_dbi - l_fs_db - pointing_loss_db - misc_loss_db - n_dbm
+    snr_db = (p_tx_dbm + g_tx_dbi + g_rx_dbi
+              - l_fs_db - pointing_loss_db - misc_loss_db - doppler_margin_db
+              - n_dbm)
     ebn0_db = snr_db + 10.0 * np.log10(b_hz / max(r_bps, 1.0))
     return snr_db, ebn0_db
 
@@ -176,6 +243,9 @@ EVT_ENERGY_LOW = 14
 EVT_CRITICAL_FAILURE = 21
 
 
+PHY_NAMES = {0: "CTRL_NARROW", 1: "BULK_WIDE"}
+
+
 @dataclass(frozen=True)
 class TxEvent:
     svc: int
@@ -185,9 +255,19 @@ class TxEvent:
     dst: int
     length_b: int
     targets: Tuple[int, ...]
+    phy_profile: int = 0  # 0=CONTROL_437_NARROW, 1=BULK_437_WIDE (frame byte 8)
 
 
 def _unpack_header(frame: bytes) -> Tuple[int, int, int, int, int, int]:
+    """Decode 5-byte packed header.
+
+    Bit layout (encoder canonical):
+    Byte 0: [ SVC[3:0] (high 4) | SNDR[7:4] (low 4) ]
+    Byte 1: [ SNDR[3:0] (high 4) | RCVR[7:4] (low 4) ]
+    Byte 2: [ RCVR[3:0] (high 4) | SEQ[7:4]  (low 4) ]
+    Byte 3: [ SEQ[3:0]  (high 4) | DEGR[3:0] (low 4) ]
+    Byte 4: [ FLAGS[3:0](high 4) | CKSM[3:0] (low 4) ]
+    """
     if len(frame) < 5:
         return (0, 0, 0, 0, 0, 0)
     byte0 = frame[0]
@@ -196,13 +276,26 @@ def _unpack_header(frame: bytes) -> Tuple[int, int, int, int, int, int]:
     byte3 = frame[3]
     byte4 = frame[4]
 
-    svc = (byte0 >> 3) & 0x1F
-    sndr = byte1
-    rcvr = byte2
-    seq = byte3
-    degr = (byte4 >> 4) & 0x0F
-    flags = byte4 & 0x0F
+    svc  = (byte0 >> 4) & 0x0F          # high nibble of byte 0
+    sndr = ((byte0 & 0x0F) << 4) | ((byte1 >> 4) & 0x0F)
+    rcvr = ((byte1 & 0x0F) << 4) | ((byte2 >> 4) & 0x0F)
+    seq  = ((byte2 & 0x0F) << 4) | ((byte3 >> 4) & 0x0F)
+    degr = byte3 & 0x0F
+    flags = (byte4 >> 4) & 0x0F
     return svc, sndr, rcvr, seq, degr, flags
+
+
+def _decode_phy_profile(frame: bytes) -> int:
+    """Read PHY profile from 64-byte frame byte 8.
+
+    After the 5-byte header, encode_frame writes:
+      [5] payload_len  [6] ext_len  [7] flags copy
+      [8] phy_profile  [9] phy_cap_mask
+    Returns 0 (CONTROL_437_NARROW) or 1 (BULK_437_WIDE).
+    """
+    if len(frame) > 8:
+        return int(frame[8]) & 0xFF
+    return 0
 
 
 def _svc_name(svc: int) -> str:
@@ -264,6 +357,7 @@ def run_protocol_probe(
     def on_tx(dst, buf_ptr, length):
         frame = ctypes.string_at(buf_ptr, length)
         svc, sndr, rcvr, seq, degr, flags = _unpack_header(frame)
+        phy = _decode_phy_profile(frame)  # 0=CTRL_NARROW, 1=BULK_WIDE
 
         # Determine delivery targets (as the python harness does)
         if dst == 0xFF or rcvr == 0xFF:
@@ -287,6 +381,7 @@ def run_protocol_probe(
                 dst=int(dst),
                 length_b=int(length),
                 targets=tuple(delivered_targets),
+                phy_profile=phy,
             )
         )
 
@@ -502,6 +597,7 @@ st.caption(
 )
 
 modulations = {
+    "GMSK BT=0.3 (coherent, ISL control baseline)": ("GMSK_BT03", 1.0),
     "BPSK (coherent)": ("BPSK", 1.0),
     "QPSK (Gray, coherent)": ("QPSK", 2.0),
     "2-FSK (coherent, orthogonal)": ("2FSK_COH", 0.5),
@@ -536,10 +632,23 @@ with st.sidebar:
     g_rx = st.slider("Rx antenna gain (dBi)", -2.0, 20.0, 2.0, 0.5)
     pointing_loss = st.slider("Pointing loss (dB)", 0.0, 5.0, 0.0, 0.5)
     misc_loss = st.slider("Other losses (dB)", 0.0, 10.0, 3.0, 0.5)
-    t_sys = st.slider("System temperature (K)", 150.0, 800.0, 280.0, 10.0)
+
+    st.subheader("Receiver noise")
+    noise_mode = st.radio("Noise model", ["T_sys (K)", "Noise Figure (dB)"], index=1, horizontal=True)
+    if noise_mode == "T_sys (K)":
+        t_sys = st.slider("System temperature (K)", 150.0, 800.0, 290.0, 10.0)
+    else:
+        nf_db = st.slider("Receiver NF (dB)", 0.5, 15.0, 5.0, 0.5)
+        t_ant = st.slider("Antenna noise temp (K)", 30.0, 300.0, 100.0, 10.0)
+        t_sys = nf_to_tsys(nf_db, t_ant_k=t_ant)
+        st.markdown(f"→ T_sys = **{t_sys:.1f} K**")
+
+    st.subheader("Doppler / implementation margin")
+    st.caption("Extra loss for frequency error from Doppler; ~1.5 dB for GMSK on 12.5 kHz ISL @ 437 MHz.")
+    doppler_margin = st.slider("Doppler guard margin (dB)", 0.0, 5.0, 1.5, 0.5)
 
     st.subheader("Modem")
-    modulation_label = st.selectbox("Modulation", list(modulations.keys()), index=3)
+    modulation_label = st.selectbox("Modulation", list(modulations.keys()), index=0)
     modulation, spectral_eff = modulations[modulation_label]
 
     coding_label = st.selectbox("FEC", list(coding_modes.keys()), index=2)
@@ -805,6 +914,7 @@ with tab_phy:
             r_bps=r_bps,
             pointing_loss_db=pointing_loss,
             misc_loss_db=misc_loss,
+            doppler_margin_db=doppler_margin,
         )
 
         ber = ber_post_decoding(ebn0, modulation=modulation, coding=coding)
@@ -895,6 +1005,7 @@ with tab_energy:
         r_bps=r_bps_bulk,
         pointing_loss_db=pointing_loss,
         misc_loss_db=misc_loss,
+        doppler_margin_db=doppler_margin,
     )
     ber_at_d = float(ber_post_decoding(ebn0_at_d, modulation=bulk_mod, coding=bulk_coding)[0])
     per_frame = float(per_from_ber(np.array([ber_at_d]), FRAME_BITS)[0])
@@ -974,6 +1085,7 @@ with tab_msg:
         r_bps=r_bps,
         pointing_loss_db=pointing_loss,
         misc_loss_db=misc_loss,
+        doppler_margin_db=doppler_margin,
     )
     ber_ctrl = float(ber_post_decoding(ebn0_ctrl, modulation=modulation, coding=coding)[0])
     per_ctrl = float(per_from_ber(np.array([ber_ctrl]), FRAME_BITS)[0])
@@ -1047,6 +1159,29 @@ with tab_msg:
                     )
 
                 st.dataframe(rows, width="stretch")
+
+                # Dual-PHY profile breakdown (CTRL_NARROW vs BULK_WIDE)
+                st.markdown("---")
+                st.markdown("**Dual-PHY profile breakdown (frame[8] decoded)**")
+                st.caption(
+                    "CTRL_NARROW = CONTROL_437_NARROW (12.5 kHz, always-on control channel). "
+                    "BULK_WIDE = BULK_437_WIDE (25 kHz, relay/borrow data channel). "
+                    "State machine selects PHY per-frame based on service and peer capability."
+                )
+                phy_counts: Dict[str, int] = {"CTRL_NARROW (0x00)": 0, "BULK_WIDE (0x01)": 0, "Unknown": 0}
+                for ev in events:
+                    if ev.phy_profile == 0:
+                        phy_counts["CTRL_NARROW (0x00)"] += 1
+                    elif ev.phy_profile == 1:
+                        phy_counts["BULK_WIDE (0x01)"] += 1
+                    else:
+                        phy_counts["Unknown"] += 1
+                total_frames = max(sum(phy_counts.values()), 1)
+                phy_rows = [
+                    {"PHY": k, "Frames": v, "%": 100.0 * v / total_frames}
+                    for k, v in phy_counts.items()
+                ]
+                st.dataframe(phy_rows, width="stretch")
 
                 st.markdown("---")
                 st.markdown("**Per-satellite energy (this probe)**")
@@ -1179,6 +1314,7 @@ with tab_kpi:
         r_bps=r_bps,
         pointing_loss_db=pointing_loss,
         misc_loss_db=misc_loss,
+        doppler_margin_db=doppler_margin,
     )
     ber = float(ber_post_decoding(ebn0, modulation=modulation, coding=coding)[0])
     per = float(per_from_ber(np.array([ber]), FRAME_BITS)[0])
@@ -1249,6 +1385,7 @@ with tab_kpi:
         r_bps=float(r_g),
         pointing_loss_db=pointing_loss,
         misc_loss_db=misc_loss,
+        doppler_margin_db=0.0,  # ground link: no ISL Doppler constraint
     )
 
     ber_g = float(ber_post_decoding(ebn0_g, modulation=modulation, coding=coding)[0])

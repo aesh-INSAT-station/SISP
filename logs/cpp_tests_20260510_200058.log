@@ -1,0 +1,15 @@
+======================================================================
+SISP C++ Test Suite — Sun May 10 20:00:58 WCAST 2026
+======================================================================
+
+--- Checking for existing test runner binary ---
+./build/Release/test_runner.exe
+
+--- g++ compile and run all C++ tests ---
+/usr/bin/bash: line 37: g++: command not found
+
+Compiling...
+/usr/bin/bash: line 44: g++: command not found
+
+--- Running tests ---
+/usr/bin/bash: line 51: /tmp/sisp_test_runner: No such file or directory
