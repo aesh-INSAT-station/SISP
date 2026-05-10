@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
+
+import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -12,17 +15,60 @@ if str(PROJECT_ROOT) not in sys.path:
 from config.settings import METADATA_COLS, RANDOM_STATE, SAMPLE_SIZE, ZENODO_URL
 from sisp.io.loader import download_dataset, load_raw
 from sisp.io.writer import print_file_summary, save_parquet, write_ingest_sample_csvs
-from sisp.preprocessing.channel_splitter import (
-    build_channel_file_map,
-    report_split_summary,
-    split_by_channel,
-)
 from sisp.preprocessing.metadata import coerce_numeric_features, report_channel_metadata, separate
-from sisp.utils.logger import get_logger
+from sisp.utils.helpers import assert_aligned, get_logger
 from sisp.utils.paths import BY_CHANNEL_DIR, RAW_DIR, channel_full_path, ensure_dirs, features_path, metadata_path
-from sisp.utils.validation import assert_aligned
 
 logger = get_logger()
+
+
+def _channel_label(value: object) -> str:
+    return "<NA>" if pd.isna(value) else str(value)
+
+
+def _sanitize_channel_name(name: str) -> str:
+    sanitized = re.sub(r"[^A-Za-z0-9]+", "_", name.strip())
+    sanitized = re.sub(r"_+", "_", sanitized).strip("_")
+    return sanitized or "unknown_channel"
+
+
+def _make_unique_name(base_name: str, used_names: set[str]) -> str:
+    candidate = base_name
+    index = 2
+    while candidate in used_names:
+        candidate = f"{base_name}_{index}"
+        index += 1
+    used_names.add(candidate)
+    return candidate
+
+
+def split_by_channel(df: pd.DataFrame, excluded: set[str]) -> dict[str, pd.DataFrame]:
+    channel_dfs: dict[str, pd.DataFrame] = {}
+    for channel_value, channel_df in df.groupby("channel", dropna=False, sort=False):
+        channel_name = _channel_label(channel_value)
+        if channel_name in excluded:
+            continue
+        channel_dfs[channel_name] = channel_df.copy()
+    return channel_dfs
+
+
+def build_channel_file_map(channel_names: list[str]) -> dict[str, str]:
+    used_names: set[str] = set()
+    return {
+        name: _make_unique_name(_sanitize_channel_name(name), used_names)
+        for name in channel_names
+    }
+
+
+def report_split_summary(df: pd.DataFrame) -> None:
+    unique_channels = [_channel_label(v) for v in df["channel"].drop_duplicates()]
+    rows_per_channel = df["channel"].map(_channel_label).value_counts(dropna=False)
+    logger.info("\nStep 1 summary")
+    logger.info(f"Total rows: {len(df)}")
+    logger.info(f"Unique channel values ({len(unique_channels)}): {unique_channels}")
+    logger.info("Row count per channel:")
+    for channel_name, row_count in rows_per_channel.items():
+        logger.info(f"  - {channel_name}: {int(row_count)}")
 
 
 def main() -> None:

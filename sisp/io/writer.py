@@ -10,7 +10,7 @@ import joblib
 import pandas as pd
 
 from config.settings import JSON_INDENT, PARQUET_ENGINE
-from sisp.utils.logger import get_logger
+from sisp.utils.helpers import assert_aligned, get_logger
 from sisp.utils.paths import (
     channel_full_path,
     features_path,
@@ -24,8 +24,6 @@ from sisp.utils.paths import (
     sample_scaled_features_csv_path,
     sample_scaled_metadata_csv_path,
 )
-from sisp.utils.validation import assert_aligned
-
 logger = get_logger()
 
 

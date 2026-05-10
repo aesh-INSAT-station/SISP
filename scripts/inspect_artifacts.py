@@ -1,23 +1,27 @@
+"""Inspect per-channel parquet artifacts and scaler metadata as tables."""
+
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 from typing import Any
 
 import joblib
 import pandas as pd
 
-from sisp.utils.logger import get_logger
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
+from sisp.utils.helpers import get_logger
 
 logger = get_logger()
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "Inspect per-channel parquet artifacts and scaler metadata as tables."
-        )
+        description="Inspect per-channel parquet artifacts and scaler metadata as tables."
     )
     parser.add_argument(
         "--channel",
@@ -33,7 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--project-root",
         type=Path,
-        default=Path(__file__).resolve().parent,
+        default=PROJECT_ROOT,
         help="Project root that contains the data/interim directory.",
     )
     return parser.parse_args()
@@ -49,14 +53,10 @@ def print_dataframe(title: str, df: pd.DataFrame, rows: int) -> None:
         return
 
     with pd.option_context(
-        "display.max_columns",
-        None,
-        "display.width",
-        160,
-        "display.max_colwidth",
-        60,
-        "display.expand_frame_repr",
-        False,
+        "display.max_columns", None,
+        "display.width", 160,
+        "display.max_colwidth", 60,
+        "display.expand_frame_repr", False,
     ):
         logger.info(preview_df.to_string(index=False))
 
@@ -132,36 +132,12 @@ def main() -> None:
     scalers_dir = args.project_root / "data" / "interim" / "scalers"
 
     artifacts: list[tuple[str, Path, str]] = [
-        (
-            "Metadata",
-            by_channel_dir / f"{args.channel}_metadata.parquet",
-            "parquet",
-        ),
-        (
-            "Metadata Clean",
-            by_channel_dir / f"{args.channel}_metadata_clean.parquet",
-            "parquet",
-        ),
-        (
-            "Features",
-            by_channel_dir / f"{args.channel}_features.parquet",
-            "parquet",
-        ),
-        (
-            "Features Scaled",
-            by_channel_dir / f"{args.channel}_features_scaled.parquet",
-            "parquet",
-        ),
-        (
-            "Features Clean",
-            by_channel_dir / f"{args.channel}_features_clean.parquet",
-            "parquet",
-        ),
-        (
-            "Scaler",
-            scalers_dir / f"{args.channel}_scaler.pkl",
-            "scaler",
-        ),
+        ("Metadata", by_channel_dir / f"{args.channel}_metadata.parquet", "parquet"),
+        ("Metadata Clean", by_channel_dir / f"{args.channel}_metadata_clean.parquet", "parquet"),
+        ("Features", by_channel_dir / f"{args.channel}_features.parquet", "parquet"),
+        ("Features Scaled", by_channel_dir / f"{args.channel}_features_scaled.parquet", "parquet"),
+        ("Features Clean", by_channel_dir / f"{args.channel}_features_clean.parquet", "parquet"),
+        ("Scaler", scalers_dir / f"{args.channel}_scaler.pkl", "scaler"),
     ]
 
     logger.info(f"Project root: {args.project_root}")

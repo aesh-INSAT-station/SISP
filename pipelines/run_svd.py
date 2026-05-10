@@ -21,11 +21,10 @@ from config.settings import (
     SVD_VARIANCE_TARGET,
 )
 from sisp.anomaly.evaluator import build_results, predict, report
-from sisp.anomaly.scorer import compute_threshold, reconstruction_error
-from sisp.anomaly.svd_model import fit_svd, select_rank
+from sisp.anomaly.svd import compute_threshold, fit_svd, reconstruction_error, select_rank
 from sisp.io.writer import print_file_summary, save_parquet, save_pickle
 from sisp.preprocessing.metadata import fit_mask
-from sisp.utils.logger import get_logger
+from sisp.utils.helpers import assert_aligned, get_logger
 from sisp.utils.paths import (
     channel_from_scaled_feature_file,
     features_scaled_path,
@@ -34,8 +33,6 @@ from sisp.utils.paths import (
     scaled_feature_files,
     svd_path,
 )
-from sisp.utils.validation import assert_aligned
-
 logger = get_logger()
 
 

@@ -7,7 +7,7 @@ from sklearn.preprocessing import StandardScaler
 
 from config.settings import TEST_MEAN_WARNING_ABS
 from sisp.preprocessing.metadata import fit_mask, test_mask
-from sisp.utils.logger import get_logger
+from sisp.utils.helpers import get_logger
 
 logger = get_logger()
 

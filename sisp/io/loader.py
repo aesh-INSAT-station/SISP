@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import zipfile
 from pathlib import Path
@@ -19,11 +20,16 @@ from config.settings import (
     ZENODO_RECORD_TIMEOUT_SEC,
     ZENODO_TOKEN_ENV_VAR,
 )
-from sisp.preprocessing.channel_splitter import sanitize_channel_name
-from sisp.utils.logger import get_logger
+from sisp.utils.helpers import get_logger
 from sisp.utils.paths import extracted_dir, raw_file_path
 
 logger = get_logger()
+
+
+def _sanitize_name(name: str) -> str:
+    sanitized = re.sub(r"[^A-Za-z0-9]+", "_", name.strip())
+    sanitized = re.sub(r"_+", "_", sanitized).strip("_")
+    return sanitized or "unknown_channel"
 
 
 def _pick_best_zenodo_file(files: list[dict]) -> dict:
@@ -44,7 +50,7 @@ def _pick_best_zenodo_file(files: list[dict]) -> dict:
 
 
 def _extract_dataset_table(raw_zip_path: Path, written_files: list[Path] | None = None) -> Path:
-    extract_root = extracted_dir(sanitize_channel_name(raw_zip_path.stem))
+    extract_root = extracted_dir(_sanitize_name(raw_zip_path.stem))
     extract_root.mkdir(parents=True, exist_ok=True)
 
     with zipfile.ZipFile(raw_zip_path, "r") as zip_handle:

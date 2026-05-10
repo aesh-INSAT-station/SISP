@@ -1,6 +1,22 @@
-"""Validation helpers for data shape, nulls, and numeric constraints."""
+"""Shared logger factory and data-shape validation helpers."""
+
+from __future__ import annotations
+
+import logging
 
 import pandas as pd
+
+
+def get_logger(channel=None):
+    name = f"sisp.{channel}" if channel else "sisp"
+    logger = logging.getLogger(name)
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        fmt = f"[{channel}] %(message)s" if channel else "%(message)s"
+        handler.setFormatter(logging.Formatter(fmt))
+        logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    return logger
 
 
 def assert_aligned(X: pd.DataFrame, meta: pd.DataFrame, context: str = "") -> None:

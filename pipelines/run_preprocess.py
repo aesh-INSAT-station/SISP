@@ -21,15 +21,20 @@ from sisp.io.writer import (
     save_pickle,
     write_scaled_sample_csvs,
 )
-from sisp.preprocessing.imputer import audit_nulls, drop_high_null_rows, impute, report_post_imputation
-from sisp.preprocessing.scaler import apply_scaler, fit_scaler, validate_scaling
-from sisp.preprocessing.variance_handler import (
+from sisp.preprocessing.cleaner import (
     apply_binary_transform,
+    apply_caps,
+    audit_nulls,
     detect_zero_variance,
+    drop_high_null_rows,
+    fit_caps,
+    impute,
     report_binary_transform,
+    report_post_imputation,
+    report_winsorization,
 )
-from sisp.preprocessing.winsorizer import apply_caps, fit_caps, report_winsorization
-from sisp.utils.logger import get_logger
+from sisp.preprocessing.scaler import apply_scaler, fit_scaler, validate_scaling
+from sisp.utils.helpers import assert_aligned, get_logger
 from sisp.utils.paths import (
     binary_features_path,
     channel_from_feature_file,
@@ -43,8 +48,6 @@ from sisp.utils.paths import (
     metadata_path,
     scaler_path,
 )
-from sisp.utils.validation import assert_aligned
-
 logger = get_logger()
 
 

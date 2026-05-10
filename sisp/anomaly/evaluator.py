@@ -7,7 +7,7 @@ from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, r
 
 from config.settings import ANOMALY_THRESHOLD_PCTILE
 from sisp.preprocessing.metadata import fit_mask, normalize_anomaly_flag, test_mask, train_mask
-from sisp.utils.logger import get_logger
+from sisp.utils.helpers import get_logger
 
 logger = get_logger()
 
