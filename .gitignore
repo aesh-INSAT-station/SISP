@@ -33,3 +33,5 @@ Thumbs.db
 # Pickle / binary artifacts
 *.pkl
 *.parquet
+# Claude Code local config/skills - not committed
+.claude/
