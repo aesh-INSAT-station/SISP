@@ -5,6 +5,9 @@
 - `c++ implemnetation/src/sisp_correction.cpp` — Implementations
 - `all_tests/test_kalman_gaussian_3sat.py` — Algorithm demo
 - `all_tests/test_noise_weighting_and_algorithms.py` — Full comparison benchmark
+- `all_tests/test_large_constellation_data_recovery.py` — 3/5/8 satellite data-driven recovery benchmark
+- `all_tests/test_noise_type_robustness.py` — Gaussian vs non-Gaussian noise robustness benchmark
+- `all_tests/test_degr_policy_sweep.py` — DEGR-to-weight policy sweep
 
 ---
 
@@ -75,7 +78,7 @@ Cumulative:      [0.2, 1.0, ...]             → crosses 1.4 at r=1  → output:
 - **Complexity:** $O(n \log n)$ per axis.
 
 ### When to use
-Best in scenarios with symmetric, low-level noise and up to half the peers badly corrupted. **Degrades significantly at high noise** — see benchmark results below.
+Best when there is enough peer redundancy for spatial consensus, especially 5-8 responders with non-Gaussian faults, random outliers, stale sensors, or dropouts. With only 2 responders it is less expressive, but with larger constellations it becomes the strongest robust default.
 
 ---
 
@@ -118,7 +121,7 @@ $$P_k = (I - KH) P_{k|k-1}$$
 | Initial covariance | $10 \cdot I_6$ | High → start uncertain, converge quickly |
 
 ### When to use
-Optimal for Gaussian noise at any level. Best single-algorithm choice for most scenarios.
+Best for small-neighbourhood Gaussian smoothing and slowly varying signals. With many responders, a raw average or weighted median can beat Kalman on benign Gaussian noise because the Kalman state can lag a dynamic data-driven signal.
 
 ---
 
@@ -153,13 +156,15 @@ $$\text{NIS} = (\mathbf{z} - H\mathbf{x}_{k|k-1})^\top S^{-1} (\mathbf{z} - H\ma
 
 If $\text{NIS} > \chi^2_{3,\,0.95} = 7.815$, the measurement is rejected and the state propagates without update.
 
-**Best for:** Scenarios with one persistently biased satellite. Poor for high symmetric noise (too many rejections).
+**Best for:** burst outliers and mixed transient faults. It can still struggle with persistent bias if the predicted state has already been pulled toward the bad source.
 
 ---
 
 ## Benchmark Results
 
-From `test_noise_weighting_and_algorithms.py` — 90 rounds, ground truth $(42, -17.5, 9.25)$, balanced neighbourhood (4 responders):
+The correction ranking depends strongly on the noise model and responder count.
+
+From `test_noise_weighting_and_algorithms.py` — small-neighbourhood synthetic benchmark with fixed ground truth $(42, -17.5, 9.25)$:
 
 ### Steady-state gain over raw (no correction), σ=20 noise:
 
@@ -189,10 +194,60 @@ From `test_noise_weighting_and_algorithms.py` — 90 rounds, ground truth $(42, 
 | Hybrid | 9.88 | **+21.33** |
 
 **Key takeaways:**
-- Kalman is best for Gaussian noise at all levels.
-- Weighted Median degrades at high noise but handles persistent bias reasonably.
-- NIS-Gated Kalman is hurt by persistent bias (the innovation is always large, so measurements are always rejected).
-- **Hybrid is the safest choice for unknown noise environments.**
+- Kalman is best for small-neighbourhood Gaussian smoothing.
+- Weighted Median is not ideal with only 2 responders and high symmetric Gaussian noise.
+- NIS-Gated Kalman helps with burst outliers but can be hurt by persistent bias.
+- Hybrid is the safest small-neighbourhood choice when fault type is unknown.
+
+---
+
+## Larger Constellation and Realistic Noise
+
+Gaussian noise is the friendliest assumption. Real satellite telemetry can include heavy tails, dropouts, quantization, stuck sensors, drift, and burst events. The larger tests use `data/raw/segments.csv` channel `CADC0873` to build a dynamic 3D ground truth from:
+
+```text
+[value_zscore, rolling_mean_zscore, first_difference_zscore]
+```
+
+The harness then simulates 3, 5, and 8 responder satellites. Eight responders is the maximum accepted by `CorrectionInput`.
+
+From `test_large_constellation_data_recovery.py`:
+
+| Satellites | Best algorithm | steady_corr | gain | p95_corr |
+|---:|---|---:|---:|---:|
+| 3 | Weighted Median | 1.92 | +2.71 | 3.30 |
+| 5 | Weighted Median | 1.56 | +3.02 | 4.24 |
+| 8 | Weighted Median | 1.24 | +2.39 | 2.16 |
+
+Under larger constellations and random event faults, Weighted Median wins because spatial redundancy lets it reject corrupted responders without state lag.
+
+### Noise-Type Robustness
+
+From `test_noise_type_robustness.py` using 8 responders and real telemetry-derived dynamic ground truth.
+
+Cell format:
+
+```text
+steady_corr / gain / p95_corr
+```
+
+| Noise type | Best algorithm | Weighted Median | Kalman | NIS-Kalman | Hybrid | DIWKCF | RANSAC-Kalman | Gossip-Kalman |
+|---|---|---|---|---|---|---|---|---|
+| Gaussian | Weighted Median | 0.98/-0.08/1.70 | 2.55/-1.65/2.85 | 2.24/-1.34/2.80 | 3.03/-2.13/4.21 | 2.88/-1.98/3.36 | 2.96/-2.06/3.17 | 3.02/-2.12/3.09 |
+| Laplace heavy-tail | Weighted Median | 0.70/+0.18/1.51 | 2.44/-1.56/2.73 | 2.09/-1.21/2.60 | 2.83/-1.95/4.09 | 2.78/-1.90/3.57 | 2.81/-1.93/3.53 | 2.88/-2.00/3.16 |
+| Student-t df=3 | Weighted Median | 1.14/+0.46/1.92 | 2.70/-1.09/2.99 | 2.26/-0.65/2.68 | 3.03/-1.43/3.72 | 2.84/-1.23/3.58 | 3.01/-1.41/3.96 | 3.23/-1.63/3.97 |
+| Salt-and-pepper | Weighted Median | 1.25/+2.94/2.12 | 3.09/+1.11/4.70 | 2.76/+1.43/3.43 | 3.15/+1.05/5.68 | 3.16/+1.04/4.70 | 2.95/+1.25/4.04 | 4.61/-0.41/8.04 |
+| Quantized | Weighted Median | 1.09/-0.16/2.09 | 2.57/-1.64/2.92 | 2.20/-1.27/2.76 | 3.07/-2.14/3.42 | 2.81/-1.88/3.40 | 2.90/-1.97/3.34 | 2.95/-2.02/3.64 |
+| Dropout | Weighted Median | 1.04/-0.06/1.81 | 2.61/-1.64/3.21 | 2.24/-1.27/2.86 | 2.99/-2.01/3.49 | 2.84/-1.87/2.99 | 2.99/-2.01/3.26 | 2.98/-2.01/3.63 |
+| Mixed realistic | Weighted Median | 1.24/+3.96/2.32 | 3.57/+1.63/3.86 | 3.27/+1.93/3.85 | 3.23/+1.97/4.21 | 3.47/+1.73/3.94 | 3.10/+2.10/3.93 | 6.02/-0.82/8.33 |
+
+Important nuance: for benign Gaussian, quantized, and dropout-only cases with 8 satellites, the raw average is already extremely strong, so some corrected outputs show negative gain versus raw. Weighted Median is still best among correction algorithms because it has minimal lag and strong spatial robustness.
+
+**Updated recommendation:**
+- Small responder count + Gaussian noise: use Kalman.
+- Small responder count + unknown faults: use Hybrid or NIS-Kalman.
+- 5-8 responders + non-Gaussian real-world faults: use Weighted Median.
+- Avoid Gossip-Kalman in high-fault regimes unless paired with stronger outlier rejection.
 
 ---
 

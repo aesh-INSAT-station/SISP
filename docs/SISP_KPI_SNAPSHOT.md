@@ -18,7 +18,7 @@
 | Tx DC power | 10 W | Includes PA inefficiency |
 | Rx DC power | 2.5 W | ~25% of TX |
 | Corrections per day | 24 (hourly) | Operating tempo |
-| Neighbours per correction | 6 | Constellation density |
+| Neighbours per correction | 8 | State-machine response cap |
 | Growth rate | 12%/yr | UCS DB historical |
 
 ---
@@ -57,11 +57,15 @@
 | Coding expansion (Conv+RS) | 1/(0.5 × 223/255) | ×2.287 |
 | Air bits per frame | 512 × 2.287 | 1,171 bits |
 | Bit rate (GMSK, 12.5 kHz) | B × 1 bit/s/Hz | 12,500 bps |
-| Frame time | 1,171 / 12,500 | **93.6 ms** |
-| Frames per correction event | 1 REQ + 6 RSP | 7 frames |
-| Energy per event (network) | 7 × 0.0936 × (10 + 6×2.5) W | **3.90 J** |
-| Daily correction energy/sat | 24 × 3.90 / 3600 | **26.0 mWh** |
-| As % of 5 W onboard budget | 26 mWh / (5 W × 24 h) | **0.022%** |
+| Frame time | 1,171 / 12,500 | **93.68 ms** |
+| Frames per correction event | 1 REQ + 8 RSP | 9 frames |
+| Requester energy per correction | $(10 + 8 \times 2.5) \times 0.09368$ | **2.81 J** |
+| Network energy per correction | $((1+8)\times10 + 2\times8\times2.5) \times 0.09368$ | **12.18 J** |
+| Daily requester correction energy | $24 \times 2.81 / 3600$ | **18.7 mWh** |
+| Daily network correction energy | $24 \times 12.18 / 3600$ | **81.2 mWh** |
+| Heartbeat maintenance | 12/hour, TX own + RX 8 neighbours | **224.8 mWh/day** |
+| No-relay daily protocol participation | corrections + heartbeat maintenance | **243.6 mWh/day** |
+| As % of 5 W onboard budget | 243.6 mWh / (5 W × 24 h) | **0.203%** |
 
 ---
 

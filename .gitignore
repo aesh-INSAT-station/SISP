@@ -33,3 +33,4 @@ Thumbs.db
 # Pickle / binary artifacts
 *.pkl
 *.parquet
+*.pdf
