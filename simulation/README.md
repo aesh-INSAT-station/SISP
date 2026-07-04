@@ -49,7 +49,7 @@ ThreeGlobe requestAnimationFrame
   -> CppProtocol sends TICK and telemetry to server
 
 server/index.js
-  -> loads cpp/sisp/c++ implemnetation/build/bin/Release/sisp.dll
+  -> loads ../c++ implemnetation/build/bin/Release/sisp.dll
   -> creates C++ contexts for satellites 1..8
   -> injects events, advances timers, routes emitted frames
   -> broadcasts centralized satellite snapshots and PACKET messages
@@ -118,7 +118,7 @@ npm run preview  # preview the production build
 The bridge expects the C++ DLL at:
 
 ```text
-cpp/sisp/c++ implemnetation/build/bin/Release/sisp.dll
+../c++ implemnetation/build/bin/Release/sisp.dll
 ```
 
 If the bridge exits with a DLL loading error, rebuild the C++ implementation or verify that this path exists.

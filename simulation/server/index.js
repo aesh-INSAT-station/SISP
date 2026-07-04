@@ -17,7 +17,7 @@ loadBridgeEnv({
 // ── DLL path ─────────────────────────────────────────────────────────────────
 const DLL_PATH = path.join(
 	__dirname,
-	'../cpp/sisp/c++ implemnetation/build/bin/Release/sisp.dll',
+	'../../c++ implemnetation/build/bin/Release/sisp.dll',
 );
 
 // ── Load library ─────────────────────────────────────────────────────────────
