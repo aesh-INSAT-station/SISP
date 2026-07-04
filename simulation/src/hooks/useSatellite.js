@@ -38,6 +38,8 @@ function snapshot(sat, engine) {
     degr_age: sat.degr_age,
     degr_orbit: sat.degr_orbit,
     degr_alt: sat.degr_alt,
+    _rho: sat._rho,
+    _windowFull: sat._windowFull,
     activeScenario: sat.activeScenario,
     log: sat.log.slice(0, 50),
     period_s: sat.period_s,

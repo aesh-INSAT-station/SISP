@@ -1,9 +1,87 @@
 import { SENSOR_HISTORY_MAX } from './sensorConfig.js';
 
 // ── Gaussian noise (Box-Muller) ───────────────────────────────────────────────
-function gaussian(sigma) {
+export function gaussian(sigma) {
   const u1 = Math.max(1e-10, Math.random());
   return sigma * Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * Math.random());
+}
+
+// ── Noise injection for OPS-SAT telemetry ─────────────────────────────────────
+function applyOpsatNoise(value, opts) {
+  if (!opts) return value;
+  let v = value;
+  const { sigma = 0, burstProb = 0, burstAmplitude = 0, driftPerSample = 0, sampleIndex = 0 } = opts;
+  if (sigma > 0) v += gaussian(sigma);
+  if (burstProb > 0 && Math.random() < burstProb) {
+    const sign = Math.random() < 0.5 ? 1 : -1;
+    v += sign * Math.abs(gaussian(burstAmplitude));
+  }
+  if (driftPerSample > 0) v += driftPerSample * sampleIndex;
+  return v;
+}
+
+// ── OPS-SAT sensor tick ───────────────────────────────────────────────────────
+// Reads from pre-loaded OPS-SAT telemetry, feeds through Hankel-SVD detector.
+// Returns { rho, isAnomalous, noisyValue, rawValue } or null if data exhausted.
+export function tickOpsatSensor(sat, timeSec, cursor) {
+  if (!cursor || !cursor.channelData) return null;
+  if (cursor.index >= cursor.channelData.values.length) return null;
+
+  const rawValue = cursor.channelData.values[cursor.index];
+  const gtAnomaly = cursor.channelData.anomaly[cursor.index];
+  cursor.index++;
+
+  // Apply noise overlay if configured
+  const opts = sat.opsatNoise || null;
+  const noisyValue = opts ? applyOpsatNoise(rawValue, { ...opts, sampleIndex: cursor.index }) : rawValue;
+
+  // Run Hankel-SVD detector
+  const rho = cursor.detector.push(noisyValue);
+  const isAnomalous = cursor.detector.isAnomalous;
+  const windowFull = cursor.detector.windowFull;
+
+  const reading = {
+    value: noisyValue,
+    raw: rawValue,
+    rho,
+    isAnomalous,
+    gtAnomaly,
+    ts_ms: timeSec * 1000,
+  };
+
+  // Update the satellite's first active sensor for UI display
+  if (sat.sensors && sat.sensors.length > 0) {
+    const sensor = sat.sensors[0];
+    if (sensor) {
+      // Map value to first axis so existing SensorRow displays it
+      if (sensor.axes && sensor.axes.length > 0) {
+        reading[sensor.axes[0]] = noisyValue;
+      }
+      reading._rho = rho;
+      sensor.last_reading = reading;
+      sensor.history.push(reading);
+      if (sensor.history.length > 200) sensor.history.shift();
+      sensor.status = isAnomalous ? 'FAULT' : 'NOMINAL';
+      sensor._rhoHistory = cursor.detector.rhoHistory;
+    }
+  }
+
+    // Expose rho for UI debugging
+  sat._rho = rho;
+  sat._windowFull = windowFull;
+
+  // Update DEGR and trigger fault
+  if (windowFull) {
+    // Map ρ to degr_svd (0-5 scale): ρ up to 2× threshold → degr_svd 0-5
+    const mapped = Math.min(5, (rho / cursor.detector.threshold) * 2);
+    sat.degr_svd = Math.max(0, mapped);
+
+    if (isAnomalous && sat.state === 'IDLE') {
+      sat._pendingFault = 'svd-detector';
+    }
+  }
+
+  return reading;
 }
 
 // ── Per-satellite mutable simulation state ────────────────────────────────────

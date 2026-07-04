@@ -128,7 +128,7 @@ const EVT = {
 // ── Real OPSSAT segment telemetry ────────────────────────────────────────────
 const SEGMENTS_CSV_PATH =
 	process.env.SISP_SEGMENTS_CSV ||
-	path.join(__dirname, '../cpp/sisp/data/raw/segments.csv');
+	path.join(__dirname, '../../data/raw/segments.csv');
 const SENSOR_HISTORY_MAX = 200;
 const INITIAL_SENSOR_HISTORY = 32;
 const DEFAULT_SAMPLE_INTERVAL_MS = 1000;

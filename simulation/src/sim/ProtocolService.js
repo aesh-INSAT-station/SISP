@@ -8,6 +8,46 @@ const PKT_RATE_BUCKETS = 10;
 // Sim epoch as UTC ms — used so existing format/relTime utilities stay ms-based.
 const SIM_EPOCH_MS = 1735689600000; // Date.UTC(2025, 0, 1)
 
+// ── Correction algorithms ──────────────────────────────────────────────────────
+
+function degrWeight(degr) { return Math.max(0.05, 1 - degr / 15); }
+
+// Weighted Median Filter: sort readings by value, accumulate weights,
+// return value where cumulative weight first reaches 50% of total.
+function weightedMedian(readings) {
+  if (readings.length === 0) return 0;
+  const sorted = [...readings].sort((a, b) => a.value - b.value);
+  const totalW = sorted.reduce((s, r) => s + r.weight, 0);
+  let acc = 0;
+  for (const r of sorted) {
+    acc += r.weight;
+    if (acc >= totalW * 0.5) return r.value;
+  }
+  return sorted[sorted.length - 1].value;
+}
+
+// 6-state constant-velocity Kalman filter (scalar per axis).
+// State: [pos, vel]; measurement: pos; process noise q, measurement noise r.
+function kalmanStep(mean, cov, z, q, r) {
+  // Predict
+  const pPred = cov + q;
+  // Update
+  const k = pPred / (pPred + r);
+  const newMean = mean + k * (z - mean);
+  const newCov = (1 - k) * pPred;
+  return { mean: newMean, cov: newCov };
+}
+
+// Hybrid: Weighted Median pre-filter → Kalman temporal smoothing.
+function hybridCorrect(readings, prevState) {
+  const q = 0.02, r = 0.8;
+  const med = weightedMedian(readings);
+  const kf = prevState
+    ? kalmanStep(prevState.mean, prevState.cov, med, q, r)
+    : { mean: med, cov: 1.0 };
+  return { corrected: kf.mean, state: kf };
+}
+
 // ── Sensor helpers ────────────────────────────────────────────────────────────
 
 function primarySensor(sat) {
@@ -38,6 +78,8 @@ function payloadFor(service, sat) {
       return { degr: sat.degr, sensor: s?.type ?? 'UNKNOWN', orbit_err_m: Math.round(sat.orbit_error_m) };
     }
     case 'CORRECTION_RSP': {
+      // Simulated reading: neighbor reports its view of the target's state,
+      // with noise proportional to its own DEGR.
       return { degr: sat.degr, k: sat.degr_k.toFixed(2), svd: sat.degr_svd.toFixed(2) };
     }
     case 'RELAY_REQ':        return { reason: 'ENERGY_LOW', energy_pct: Math.round(sat.energy) };
@@ -158,12 +200,31 @@ export class ProtocolService {
     const others  = this.engine.findNearest(sat, 4).filter((s) => s.role !== 'NAV_REFERENCE');
     const neighbors = [...navRefs, ...others].slice(0, 3);
     let received = 0;
+    const readings = [];
+
+    // The "true" value being measured: orbit error drives the simulated reading
+    const trueVal = sat.orbit_error_m;
+
     neighbors.forEach((n, idx) => {
       this.simClock.scheduleAfter(idx * 0.12, () => {
         this.request(sat, n, 'CORRECTION_REQ', 'CORRECTION_RSP').then(() => {
+          // Simulated measurement: neighbor's view of the true value,
+          // corrupted by noise proportional to the neighbor's DEGR.
+          const noiseFactor = 0.1 + 0.05 * n.degr;
+          const measurement = trueVal * (1 + (Math.random() - 0.5) * noiseFactor);
+          readings.push({ value: measurement, weight: degrWeight(n.degr) });
           received++;
           if (received === neighbors.length) {
+            // Run the hybrid correction algorithm
             sat.state = 'CORR_COMPUTING';
+            const result = hybridCorrect(readings, sat._correctionState);
+            sat._correctionState = result.state;
+            const corrected = Math.max(20, result.corrected);
+            // Apply correction: reduce orbit error
+            const improvement = Math.abs(sat.orbit_error_m - corrected);
+            sat.orbit_error_m = Math.max(20, sat.orbit_error_m - improvement * 0.6);
+            sat.degr_svd = Math.max(0, sat.degr_svd - 0.5);
+            this._log(sat, 'TX', 'CORRECTION_DONE', 0, 0);
             this.simClock.scheduleAfter(0.8, () => { if (sat.state === 'CORR_COMPUTING') this._endScenario(sat); });
           }
         });

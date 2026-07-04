@@ -175,6 +175,11 @@ function Breakdown({ sat }) {
       <DegrRow label="SVD RES"  value={sat.degr_svd}  max={5} />
       <DegrRow label="AGE"      value={sat.degr_age}  max={3} />
       <DegrRow label="ORBIT"    value={sat.degr_orbit} max={2} />
+      {sat._rho != null && (
+        <div style={{ fontSize: 8, color: '#94a3b8', marginTop: 4, fontFamily: FONT_MONO }}>
+          ρ: {sat._rho.toFixed(3)} {sat._windowFull ? '' : '(warming)'}
+        </div>
+      )}
     </div>
   );
 }

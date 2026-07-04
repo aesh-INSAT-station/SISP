@@ -2,7 +2,9 @@ import { SAT_CONFIG, GROUND_STATIONS } from '../constants/index.js';
 import { ProtocolService } from './ProtocolService.js';
 import { periodSeconds, altitudeKm, geodeticAt, altitudeDEGR } from './keplerian.js';
 import { buildSensors } from './sensorConfig.js';
-import { tickSensors } from './sensorSim.js';
+import { tickSensors, tickOpsatSensor } from './sensorSim.js';
+import { HankelSVDDetector } from './HankelSVDDetector.js';
+import { losToStation } from '../utils/los.js';
 
 const DEGR_HISTORY_LEN = 60;
 
@@ -12,7 +14,7 @@ function dist3(a, b) {
 }
 
 function createSat(cfg) {
-  return {
+  const sat = {
     id: cfg.id,
     name: cfg.name,
     role: cfg.role,
@@ -40,7 +42,7 @@ function createSat(cfg) {
     roleWeights: cfg.roleWeights,
     baseDegrBoost: cfg.baseDegrBoost || 0,
     degr_k: 1 + Math.random() * 2,
-    degr_svd: 1 + Math.random() * 2,
+    degr_svd: 0,
     degr_age: 0,
     degr_orbit: 0,
     degr_alt: 0,
@@ -51,7 +53,18 @@ function createSat(cfg) {
     degrHistory: new Array(DEGR_HISTORY_LEN).fill(0),
     inSunlight: true,
     _pendingFault: null,
+    _relayPending: false,
+    _borrowPending: false,
+    _hadLOS: null, // null = first tick, skip transition detection
+    _ticksSinceScenario: 0,
+    _correctionCooldown: 0,
+    _correctionState: null,
+    telemetrySource: cfg.telemetrySource,
+    opsatChannel: cfg.opsatChannel,
+    opsatDetectorOpts: cfg.opsatDetectorOpts,
+    opsatNoise: cfg.opsatNoise,
   };
+  return sat;
 }
 
 export class SimulationEngine {
@@ -61,6 +74,44 @@ export class SimulationEngine {
     this.protocol = new ProtocolService(this, simClock);
     this.groundStations = GROUND_STATIONS.map((g) => ({ ...g, currentPos: null }));
     this._minutesElapsed = 0;
+    this._opsatData = null;
+    this._opsatCursors = {};
+    this._opsatReady = false;
+    this._loadOpsatData();
+    // Periodic heartbeat (external timer, per SISP protocol spec)
+    this.simClock.setInterval(30, () => {
+      this.protocol.triggerHeartbeat();
+    });
+  }
+
+  _repeatIndex(index, length) {
+    if (length <= 0) return 0;
+    return index % length;
+  }
+
+  async _loadOpsatData() {
+    try {
+      const res = await fetch('/segments.json');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      this._opsatData = await res.json();
+      this.sats.forEach((sat) => {
+        if (sat.telemetrySource === 'segments.csv' && sat.opsatChannel) {
+          const chData = this._opsatData.channels[sat.opsatChannel];
+          if (chData) {
+            this._opsatCursors[sat.id] = {
+              channel: sat.opsatChannel,
+              channelData: chData,
+              index: 0,
+              detector: new HankelSVDDetector(sat.opsatDetectorOpts || {}),
+            };
+          }
+        }
+      });
+      this._opsatReady = true;
+      console.log(`OPS-SAT data loaded: ${Object.keys(this._opsatCursors).length} channels`);
+    } catch (e) {
+      console.warn('OPS-SAT data not available:', e.message);
+    }
   }
 
   getSat(id) { return this.sats.find((s) => s.id === id); }
@@ -104,23 +155,82 @@ export class SimulationEngine {
     const timeSec = this.simClock.currentTime;
     this.sats.forEach((sat) => {
       this._updateSat(sat);
-      if (sat.telemetrySource !== 'segments.csv') {
+      if (sat.telemetrySource === 'segments.csv') {
+        this._tickOpsat(sat, timeSec);
+      } else {
         tickSensors(sat, timeSec);
-        // Consume pending sensor fault — trigger correction if satellite is idle
-        if (sat._pendingFault && sat.state === 'IDLE') {
-          sat._pendingFault = null;
-          this.protocol.triggerCorrection(sat.id);
-        } else if (sat._pendingFault) {
-          sat._pendingFault = null;
-        }
       }
+      this._processSatScenario(sat);
     });
+  }
+
+  _processSatScenario(sat) {
+    if (sat.state !== 'IDLE') {
+      sat._pendingFault = null;
+      sat._ticksSinceScenario = 0;
+      return;
+    }
+    sat._ticksSinceScenario++;
+    if (sat._correctionCooldown > 0) sat._correctionCooldown--;
+
+    // 1. Hankel-SVD or sensor fault → CORRECTION (only when cooldown is 0)
+    if (sat._pendingFault && sat._correctionCooldown === 0) {
+      sat._pendingFault = null;
+      sat._correctionCooldown = 80; // ~160 sim-sec gap so relay/borrow can fire
+      this.protocol.triggerCorrection(sat.id);
+      return;
+    }
+    // Clear fault if on cooldown (will re-arm on next tick)
+    sat._pendingFault = null;
+
+    // 2. GS_LOST → RELAY (once per dark pass), GS_VISIBLE → BORROW
+    if (sat.currentPos) {
+      const hasLOS = this.groundStations.some((gs) => losToStation(sat.currentPos, gs));
+      const lostLOS = sat._hadLOS != null && sat._hadLOS && !hasLOS;
+      const gainedLOS = sat._hadLOS != null && !sat._hadLOS && hasLOS;
+      sat._hadLOS = hasLOS;
+
+      // GS_LOST → relay request (randomized to avoid perfect sync)
+      if (lostLOS && !sat._relayPending && Math.random() < 0.15) {
+        sat._relayPending = true;
+        this.protocol.triggerRelay(sat.id);
+        return;
+      }
+      // GS_VISIBLE → borrow request
+      if (gainedLOS && Math.random() < 0.1) {
+        this.protocol.triggerBorrow(sat.id);
+        return;
+      }
+      // Reset relay flag when we have LOS again
+      if (hasLOS) sat._relayPending = false;
+    }
+
+    // 4. Random HEARTBEAT pulse from busy satellites
+    if (sat.role !== 'NAV_REFERENCE' && Math.random() < 0.003) {
+      this.protocol.triggerHeartbeat(sat.id);
+    }
+  }
+
+  _tickOpsat(sat, timeSec) {
+    const cursor = this._opsatCursors[sat.id];
+    if (!cursor || !this._opsatReady) return;
+    // Consume 1 sample per sim-second (tick fires every 2 sim-seconds → 2 samples)
+    // Wrap index when data exhausted (infinite repeat)
+    const totalLen = cursor.channelData.values.length;
+    const samplesPerTick = Math.min(2, totalLen);
+    for (let i = 0; i < samplesPerTick; i++) {
+      if (totalLen > 0) cursor.index = this._repeatIndex(cursor.index, totalLen);
+      const result = tickOpsatSensor(sat, timeSec, cursor);
+      if (!result) break;
+    }
   }
 
   _updateSat(sat) {
     sat.uptime_s += 2;
     sat.degr_k   = Math.max(0, Math.min(5, sat.degr_k   + (Math.random() - 0.5) * 0.5));
-    sat.degr_svd = Math.max(0, Math.min(5, sat.degr_svd + (Math.random() - 0.5) * 0.4));
+    if (!sat.telemetrySource) {
+      sat.degr_svd = Math.max(0, Math.min(5, sat.degr_svd + (Math.random() - 0.5) * 0.4));
+    }
     sat.degr_age = Math.min(3, Math.floor(sat.uptime_s / 30000));
     sat.degr_orbit = Math.max(0, Math.min(2, Math.floor(sat.orbit_error_m / 120)));
 
@@ -136,10 +246,43 @@ export class SimulationEngine {
     )));
     sat.orbit_error_m = Math.max(20, sat.orbit_error_m + (Math.random() - 0.5) * 10);
 
+    // ── Energy & failure simulation ──────────────────────────────────────────
     if (sat.state === 'IDLE') {
-      const drain = sat.inSunlight ? 0.05 : 0.25;
-      sat.energy = Math.max(0, sat.energy - drain);
-      if (sat.inSunlight && Math.random() < 0.08) sat.energy = Math.min(100, sat.energy + 4);
+      // Normal drain
+      if (sat.inSunlight) {
+        sat.energy -= 0.05;
+        // 2% chance solar panel fails to charge this tick
+        if (Math.random() < 0.02) { /* charge skipped */ }
+        else if (Math.random() < 0.08) sat.energy += 4;
+      } else {
+        sat.energy -= 0.25;
+      }
+
+      // 1% chance of sudden energy spike drain (solar panel misalignment / heater stuck on)
+      if (Math.random() < 0.01) {
+        const spikeLoss = 15 + Math.random() * 25; // 15–40% of remaining
+        sat.energy -= spikeLoss;
+      }
+
+      // 0.3% chance of random critical failure
+      if (Math.random() < 0.003) {
+        this.protocol.triggerFailure(sat.id);
+      }
+
+      // Energy at zero → die
+      if (sat.energy <= 0) {
+        sat.energy = 0;
+        this.protocol.triggerFailure(sat.id);
+      }
+
+      sat.energy = Math.max(0, Math.min(100, sat.energy));
+    }
+
+    // Recovery from CRITICAL_FAIL: revive after ~60 sim-seconds with 10% energy
+    if (sat.state === 'CRITICAL_FAIL' && sat.uptime_s % 60 < 2) {
+      sat.energy = 10;
+      sat.state = 'IDLE';
+      sat.activeScenario = null;
     }
   }
 }

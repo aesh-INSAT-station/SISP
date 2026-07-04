@@ -148,6 +148,23 @@ def coding_expansion(coding: str) -> float:
     raise ValueError(f"Unknown coding: {coding}")
 
 
+def interference_penalty(ebn0_db: np.ndarray, jsr_db: float, mode: str = "in_band") -> np.ndarray:
+    """Apply interference penalty to Eb/N0.
+
+    In-band tone jammer at J/S ratio (dB):
+        Eb/N0_eff = Eb/N0 - 10·log10(1 + J/S_lin)
+
+    Adjacent-channel: add ACLR attenuation to the J/S ratio:
+        J_eff = J - ACLR  →  J/S_eff = J/S - ACLR
+
+    ALOHA collision proxy (optional): treated as an erasure channel,
+    collision_prob = 1 - exp(-G) for normalised offered load G.
+    """
+    jsr_lin = 10.0 ** (jsr_db / 10.0)
+    penalty_db = 10.0 * np.log10(1.0 + jsr_lin)
+    return np.asarray(ebn0_db, dtype=float) - penalty_db
+
+
 def nf_to_tsys(nf_db: float, t_ant_k: float = 100.0) -> float:
     """Convert receiver noise figure (dB) + antenna noise temp to system noise temperature.
 
@@ -171,11 +188,14 @@ def calc_link_budget(
     pointing_loss_db: float,
     misc_loss_db: float,
     doppler_margin_db: float = 0.0,
+    interference_db: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compute SNR and Eb/N0 from free-space link budget.
 
     doppler_margin_db: additional implementation loss for Doppler compensation
     (e.g., 1.5 dB for GMSK/GFSK on 12.5 kHz narrow-band ISL at 437 MHz).
+    interference_db: effective reduction from tone jammer or adjacent-channel
+    interferer (pass 0 for no interference, or from interference_penalty()).
     """
     d_m = d_km * 1000.0
     l_fs_db = 20.0 * np.log10(d_m) + 20.0 * np.log10(f_hz) + 20.0 * np.log10(4.0 * np.pi / C_MPS)
@@ -184,7 +204,7 @@ def calc_link_budget(
     n_dbm = 10.0 * np.log10(n_w) + 30.0
 
     snr_db = (p_tx_dbm + g_tx_dbi + g_rx_dbi
-              - l_fs_db - pointing_loss_db - misc_loss_db - doppler_margin_db
+              - l_fs_db - pointing_loss_db - misc_loss_db - doppler_margin_db - interference_db
               - n_dbm)
     ebn0_db = snr_db + 10.0 * np.log10(b_hz / max(r_bps, 1.0))
     return snr_db, ebn0_db
@@ -781,7 +801,7 @@ coding_modes = {
 
 with st.sidebar:
     # Logo placement
-    st.image("simulation for signal and physics/logo.png", width="stretch")
+    import os as _os; st.image("logo.png" if _os.path.exists("logo.png") else "../simulation for signal and physics/logo.png", width="stretch")
     st.markdown("---")
     st.header("Common Inputs")
 
@@ -816,6 +836,24 @@ with st.sidebar:
     st.caption("Extra loss for frequency error from Doppler; ~1.5 dB for GMSK on 12.5 kHz ISL @ 437 MHz.")
     doppler_margin = st.slider("Doppler guard margin (dB)", 0.0, 5.0, 1.5, 0.5)
 
+    st.subheader("Interference")
+    st.caption("Tone jammer or adjacent-channel interferer. Reduces effective Eb/N0.")
+    enable_interference = st.checkbox("Enable interference model", value=False)
+    jammer_type = st.selectbox("Jammer type", ["In-band tone", "Adjacent-channel", "ALOHA collision proxy"], index=0)
+    jsr_db = st.slider("J/S ratio (dB)", -20.0, 30.0, 6.0, 1.0, disabled=not enable_interference)
+    if jammer_type == "Adjacent-channel":
+        aclr_db = st.slider("ACLR (dB)", 10.0, 60.0, 30.0, 1.0, disabled=not enable_interference,
+                            help="Adjacent Channel Leakage Ratio — how much power leaks from the adjacent channel.")
+        jsr_eff_db = jsr_db - aclr_db
+    else:
+        aclr_db = 0.0
+        jsr_eff_db = jsr_db
+    st.caption(f"Effective J/S after filtering: {jsr_eff_db:.1f} dB" if enable_interference else "")
+    interference_db = jsr_eff_db if enable_interference else 0.0
+    if enable_interference and interference_db > 0:
+        penalty_db = 10.0 * np.log10(1.0 + 10.0 ** (interference_db / 10.0))
+        st.caption(f"→ Equivalent Eb/N0 penalty: {penalty_db:.1f} dB")
+
     st.subheader("Modem")
     modulation_label = st.selectbox("Modulation", list(modulations.keys()), index=0)
     modulation, spectral_eff = modulations[modulation_label]
@@ -831,13 +869,14 @@ with st.sidebar:
     p_rx_dc_w = st.slider("Rx DC power while receiving (W)", 0.1, 15.0, 2.5, 0.1)
 
 
-(tab_geo, tab_phy, tab_energy, tab_msg, tab_kpi) = st.tabs(
+(tab_geo, tab_phy, tab_energy, tab_msg, tab_kpi, tab_robust) = st.tabs(
     [
         "Geometry (LoS + Doppler)",
         "PHY (BER/PER)",
         "Timing & Energy",
         "Protocol Message Energy",
         "KPI Dashboard",
+        "Robustness Analysis",
     ]
 )
 
@@ -1060,6 +1099,13 @@ with tab_phy:
         ax1.semilogy(ebn0_range, ber_none, label="None")
         ax1.semilogy(ebn0_range, ber_conv, label="Conv")
         ax1.semilogy(ebn0_range, ber_rs, label="Conv+RS")
+        if enable_interference:
+            ebn0_jammed = interference_penalty(ebn0_range, jsr_eff_db)
+            ber_jam = ber_post_decoding(ebn0_jammed, modulation=modulation, coding="CONV_RS")
+            ax1.semilogy(ebn0_range, ber_jam, "--", color="#ff4466", lw=1.5,
+                        label=f"Conv+RS + jammer (J/S={jsr_eff_db:.0f} dB)")
+            ax1.axvspan(0, 20, alpha=0.03, color="#ff4466",
+                       label=f"Interference-limited regime" if jsr_eff_db > 0 else "")
         ax1.set(ylim=(1e-12, 1), xlabel="Eb/N0 (dB)", ylabel="BER")
         ax1.grid(True, which="both", ls="--", alpha=0.4)
         ax1.legend()
@@ -1091,9 +1137,17 @@ with tab_phy:
         per = np.clip(per, 1e-12, 1.0)
 
         fig2, ax2 = plt.subplots(figsize=(6, 4))
-        ax2.semilogy(d_km, per)
+        ax2.semilogy(d_km, per, label="No interference")
+        if enable_interference:
+            ebn0_jammed = interference_penalty(ebn0, jsr_eff_db)
+            ber_jam = ber_post_decoding(ebn0_jammed, modulation=modulation, coding=coding)
+            per_jam = per_from_ber(ber_jam, FRAME_BITS)
+            per_jam = np.clip(per_jam, 1e-12, 1.0)
+            ax2.semilogy(d_km, per_jam, "--", color="#ff4466", lw=1.5,
+                        label=f"+ jammer (J/S={jsr_eff_db:.0f} dB)")
         ax2.set(ylim=(1e-8, 1), xlabel="Distance (km)", ylabel="PER")
         ax2.grid(True, which="both", ls="--", alpha=0.4)
+        ax2.legend()
         st.pyplot(fig2)
 
 
@@ -1175,6 +1229,7 @@ with tab_energy:
         pointing_loss_db=pointing_loss,
         misc_loss_db=misc_loss,
         doppler_margin_db=doppler_margin,
+        interference_db=interference_db,
     )
     ber_at_d = float(ber_post_decoding(ebn0_at_d, modulation=bulk_mod, coding=bulk_coding)[0])
     per_frame = float(per_from_ber(np.array([ber_at_d]), FRAME_BITS)[0])
@@ -1255,6 +1310,7 @@ with tab_msg:
         pointing_loss_db=pointing_loss,
         misc_loss_db=misc_loss,
         doppler_margin_db=doppler_margin,
+        interference_db=interference_db,
     )
     ber_ctrl = float(ber_post_decoding(ebn0_ctrl, modulation=modulation, coding=coding)[0])
     per_ctrl = float(per_from_ber(np.array([ber_ctrl]), FRAME_BITS)[0])
@@ -1484,6 +1540,7 @@ with tab_kpi:
         pointing_loss_db=pointing_loss,
         misc_loss_db=misc_loss,
         doppler_margin_db=doppler_margin,
+        interference_db=interference_db,
     )
     ber = float(ber_post_decoding(ebn0, modulation=modulation, coding=coding)[0])
     per = float(per_from_ber(np.array([ber]), FRAME_BITS)[0])
@@ -1591,3 +1648,112 @@ with tab_kpi:
             "Energy margin (Wh/day)": round(daily_gen_wh - noncomms_wh - comms_wh, 3),
         }
     )
+
+
+# =============================================================================
+# Robustness Analysis tab
+# =============================================================================
+
+with tab_robust:
+    st.subheader("Interference Robustness Comparison")
+    st.caption(
+        "Three fixed interference scenarios applied to the current link budget. "
+        "The baseline Eb/N0 is computed at the reference distance using sidebar RF parameters."
+    )
+
+    d_ref_km = st.number_input(
+        "Reference distance (km)", min_value=10.0, max_value=20000.0, value=1000.0, step=50.0
+    )
+
+    scenarios = [
+        {"name": "A. Moderate in-band", "jsr_db": 6.0, "type": "in_band", "aclr_db": None},
+        {"name": "B. Strong adjacent-channel", "jsr_db": 20.0, "type": "adjacent", "aclr_db": 25.0},
+        {"name": "C. Weak interference", "jsr_db": -10.0, "type": "in_band", "aclr_db": None},
+    ]
+
+    # Baseline Eb/N0 at reference distance (no interference)
+    _, ebn0_ref_arr = calc_link_budget(
+        d_km=np.array([d_ref_km]),
+        p_tx_dbm=p_tx_dbm,
+        f_hz=float(f_hz),
+        g_tx_dbi=g_tx,
+        g_rx_dbi=g_rx,
+        t_sys_k=t_sys,
+        b_hz=float(b_hz),
+        r_bps=r_bps,
+        pointing_loss_db=pointing_loss,
+        misc_loss_db=misc_loss,
+        doppler_margin_db=doppler_margin,
+    )
+    ebn0_ref = float(ebn0_ref_arr[0])
+
+    rows = []
+    for sc in scenarios:
+        jsr_eff = sc["jsr_db"]
+        if sc["aclr_db"] is not None:
+            jsr_eff = sc["jsr_db"] - sc["aclr_db"]
+
+        penalty_db_val = 10.0 * np.log10(1.0 + 10.0 ** (jsr_eff / 10.0))
+        ebn0_eff = ebn0_ref - penalty_db_val
+
+        ber_uncoded = float(
+            ber_post_decoding(np.array([ebn0_eff]), modulation=modulation, coding="NONE")[0]
+        )
+        ber_coded = float(
+            ber_post_decoding(np.array([ebn0_eff]), modulation=modulation, coding=coding)[0]
+        )
+        per_val = per_from_ber(ber_coded, FRAME_BITS)
+        feasible = per_val < 0.01
+
+        rows.append(
+            {
+                "Scenario": sc["name"],
+                "J/S (dB)": sc["jsr_db"],
+                "ACLR (dB)": sc["aclr_db"] if sc["aclr_db"] is not None else "—",
+                "Eff. J/S (dB)": f"{jsr_eff:.1f}",
+                "Eb/N0 penalty (dB)": f"{penalty_db_val:.2f}",
+                "Eb/N0 after (dB)": f"{ebn0_eff:.2f}",
+                "Uncoded BER": f"{ber_uncoded:.2e}",
+                "Coded BER": f"{ber_coded:.2e}",
+                "PER (64B)": f"{per_val:.2e}",
+                "Link feasible": "✓" if feasible else "✗",
+            }
+        )
+
+    st.table(rows)
+
+    st.markdown("**BER curves under each scenario**")
+    ebn0_range_plot = np.linspace(0, 20, 400)
+    ber_base = ber_post_decoding(ebn0_range_plot, modulation=modulation, coding=coding)
+
+    fig_rob, ax_rob = plt.subplots(figsize=(8, 4.5))
+    ax_rob.semilogy(ebn0_range_plot, ber_base, "k-", lw=2, label="No interference")
+
+    colors = ["#ff4466", "#ffaa00", "#44aaff"]
+    for i, sc in enumerate(scenarios):
+        jsr_eff = sc["jsr_db"]
+        if sc["aclr_db"] is not None:
+            jsr_eff = sc["jsr_db"] - sc["aclr_db"]
+        ebn0_jammed = interference_penalty(ebn0_range_plot, jsr_eff)
+        ber_jam = ber_post_decoding(ebn0_jammed, modulation=modulation, coding=coding)
+        ax_rob.semilogy(
+            ebn0_range_plot,
+            ber_jam,
+            "--",
+            color=colors[i],
+            lw=1.5,
+            label=f"{sc['name']} (eff. J/S={jsr_eff:.0f} dB)",
+        )
+        penalty_mark = 10.0 * np.log10(1.0 + 10.0 ** (jsr_eff / 10.0))
+        ebn0_op = ebn0_ref - penalty_mark
+        ax_rob.axvline(ebn0_op, color=colors[i], ls=":", alpha=0.4)
+
+    ax_rob.set(
+        ylim=(1e-12, 1),
+        xlabel="Eb/N0 (dB)",
+        ylabel="BER",
+        title=f"Interference Robustness: {modulation_label}, {coding_label} @ {d_ref_km:.0f} km",
+    )
+    ax_rob.grid(True, which="both", ls="--", alpha=0.3)
+    ax_rob.legend()
+    st.pyplot(fig_rob)

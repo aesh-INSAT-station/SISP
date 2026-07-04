@@ -102,6 +102,10 @@ export const SAT_CONFIG = [
     sensor: 'OPTICAL', baseDegrBoost: 0, modelKm: 40,
     sample: { intervalSec: 30, windowMin: 180 },
     roleWeights: { failure: 1.0, correction: 1.0, relay: 2.5, status: 1.2, borrow: 0.5 },
+    telemetrySource: 'segments.csv',
+    opsatChannel: 'CADC0873',
+    opsatDetectorOpts: { windowLen: 100, hankelRows: 50, threshold: 0.15 },
+    opsatNoise: { sigma: 5e-7 },   // data std≈2e-5 → σ=2.5% of range
   },
   {
     id: 0x02, name: 'LEO-COM', role: 'COMMS',
@@ -109,6 +113,10 @@ export const SAT_CONFIG = [
     sensor: 'GYROSCOPE', baseDegrBoost: 0, modelKm: 40,
     sample: { intervalSec: 30, windowMin: 180 },
     roleWeights: { failure: 1.0, correction: 1.0, relay: 1.4, status: 1.6, borrow: 0.8 },
+    telemetrySource: 'segments.csv',
+    opsatChannel: 'CADC0872',
+    opsatDetectorOpts: { windowLen: 100, hankelRows: 50, threshold: 0.15 },
+    opsatNoise: { sigma: 5e-7 },   // data std≈2e-5 → σ=2.5% of range
   },
   {
     id: 0x03, name: 'LEO-SCI', role: 'SCIENCE',
@@ -116,6 +124,10 @@ export const SAT_CONFIG = [
     sensor: 'MAGNETOMETER', baseDegrBoost: 0, modelKm: 40,
     sample: { intervalSec: 30, windowMin: 180 },
     roleWeights: { failure: 1.0, correction: 2.8, relay: 1.0, status: 1.0, borrow: 1.0 },
+    telemetrySource: 'segments.csv',
+    opsatChannel: 'CADC0894',
+    opsatDetectorOpts: { windowLen: 100, hankelRows: 50, threshold: 0.15 },
+    opsatNoise: { sigma: 0.01 },   // data std≈0.21 → σ≈5% of range
   },
   {
     id: 0x04, name: 'MEO-NAV-A', role: 'NAV_REFERENCE',
@@ -152,5 +164,9 @@ export const SAT_CONFIG = [
     sensor: 'OPTICAL', baseDegrBoost: 0, modelKm: 40,
     sample: { intervalSec: 30, windowMin: 180 },
     roleWeights: { failure: 0.7, correction: 1.0, relay: 1.0, status: 1.0, borrow: 2.5 },
+    telemetrySource: 'segments.csv',
+    opsatChannel: 'CADC0892',
+    opsatDetectorOpts: { windowLen: 100, hankelRows: 50, threshold: 0.15 },
+    opsatNoise: { sigma: 0.015 },  // data std≈0.33 → σ≈4.5% of range
   },
 ];
