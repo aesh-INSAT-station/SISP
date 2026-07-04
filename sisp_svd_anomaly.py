@@ -103,6 +103,14 @@ def load_data(path: str, verbose: bool = True) -> pd.DataFrame:
         log("  Raw format detected — deriving segment features ...", verbose)
         df = _derive_features(df, verbose)
 
+    # Ground-truth label normalization. The real per-segment label for this
+    # dataset is the numeric `anomaly` column (0 = nominal, 1 = anomalous).
+    # The raw segments.csv also has a `label` column, but it is a constant
+    # string ("anomaly") and is not a usable per-segment label. Downstream code
+    # expects a numeric 0/1 `label`, so derive it from `anomaly` when present.
+    if "anomaly" in df.columns:
+        df["label"] = pd.to_numeric(df["anomaly"], errors="coerce").fillna(0).astype(int)
+
     return df
 
 

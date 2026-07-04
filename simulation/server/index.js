@@ -15,18 +15,26 @@ loadBridgeEnv({
 });
 
 // ── DLL path ─────────────────────────────────────────────────────────────────
-const DLL_PATH = path.join(
-	__dirname,
-	'../cpp/sisp/c++ implemnetation/build/bin/Release/sisp.dll',
-);
+// The C++ protocol engine now lives at the SISP repo root (this app was merged
+// in from the standalone SISP-SIM repo, where cpp/sisp was a git submodule).
+// Resolve the DLL from the repo root, with an env override for custom builds.
+const DLL_CANDIDATES = [
+	process.env.SISP_DLL_PATH,
+	// SISP repo root: simulation/server -> ../../
+	path.join(__dirname, '../../c++ implemnetation/build/bin/Release/sisp.dll'),
+	// Legacy submodule location (kept as a fallback)
+	path.join(__dirname, '../cpp/sisp/c++ implemnetation/build/bin/Release/sisp.dll'),
+].filter(Boolean);
 
-// ── Load library ─────────────────────────────────────────────────────────────
+const DLL_PATH = DLL_CANDIDATES.find((p) => fs.existsSync(p)) || DLL_CANDIDATES[0];
+
+// ── Load library ──────────────────────────────────────────────────────────────
 let lib;
 try {
 	lib = koffi.load(DLL_PATH);
 } catch (e) {
 	console.error('[SISP] Failed to load sisp.dll:', e.message);
-	console.error('[SISP] Expected at:', DLL_PATH);
+	console.error('[SISP] Tried:', DLL_CANDIDATES.join('\n         '));
 	process.exit(1);
 }
 
@@ -126,9 +134,16 @@ const EVT = {
 };
 
 // ── Real OPSSAT segment telemetry ────────────────────────────────────────────
+// Lives at the SISP repo root (data/raw/segments.csv). The legacy default
+// pointed at the old cpp/sisp submodule; keep it as a fallback and allow an
+// env override via SISP_SEGMENTS_CSV.
 const SEGMENTS_CSV_PATH =
 	process.env.SISP_SEGMENTS_CSV ||
-	path.join(__dirname, '../cpp/sisp/data/raw/segments.csv');
+	[
+		path.join(__dirname, '../../data/raw/segments.csv'),
+		path.join(__dirname, '../cpp/sisp/data/raw/segments.csv'),
+	].find((p) => fs.existsSync(p)) ||
+	path.join(__dirname, '../../data/raw/segments.csv');
 const SENSOR_HISTORY_MAX = 200;
 const INITIAL_SENSOR_HISTORY = 32;
 const DEFAULT_SAMPLE_INTERVAL_MS = 1000;
