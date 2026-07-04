@@ -1,3 +1,4 @@
+import csv
 import math
 import os
 import ctypes
@@ -192,6 +193,174 @@ def calc_link_budget(
 def per_from_ber(ber: np.ndarray, info_bits: int) -> np.ndarray:
     ber = np.clip(ber, 0.0, 1.0)
     return 1.0 - np.exp(info_bits * np.log1p(-ber))
+
+
+RAW_TELEMETRY_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "raw", "segments.csv")
+
+
+@st.cache_data(show_spinner=False)
+def load_raw_telemetry_rows(data_path: str) -> List[Dict[str, str]]:
+    if not os.path.exists(data_path):
+        raise FileNotFoundError(f"Raw telemetry file not found: {data_path}")
+
+    with open(data_path, newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        required = {"channel", "timestamp", "value"}
+        fieldnames = set(reader.fieldnames or [])
+        if not required.issubset(fieldnames):
+            raise ValueError(f"Expected raw telemetry columns {required}, got {fieldnames}")
+        return list(reader)
+
+
+def _raw_channels(rows: List[Dict[str, str]]) -> List[str]:
+    return sorted({row["channel"] for row in rows if row.get("channel")})
+
+
+def _raw_segments(rows: List[Dict[str, str]], channel: str) -> List[str]:
+    return sorted({row.get("segment", "") for row in rows if row.get("channel") == channel and row.get("segment")})
+
+
+def _extract_raw_series(
+    rows: List[Dict[str, str]],
+    channel: str,
+    segment: Optional[str] = None,
+    max_points: Optional[int] = None,
+) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+    values: List[float] = []
+    labels: List[int] = []
+    timestamps: List[str] = []
+
+    for row in rows:
+        if row.get("channel") != channel:
+            continue
+        if segment and row.get("segment") != segment:
+            continue
+
+        try:
+            value = float(row.get("value", "nan"))
+        except ValueError:
+            continue
+
+        label_text = str(row.get("label", "")).strip().lower()
+        anomaly_flag = 1 if (str(row.get("anomaly", "0")).strip() == "1" or label_text == "anomaly") else 0
+
+        values.append(value)
+        labels.append(anomaly_flag)
+        timestamps.append(row.get("timestamp", ""))
+
+        if max_points is not None and len(values) >= max_points:
+            break
+
+    return np.asarray(values, dtype=float), np.asarray(labels, dtype=int), timestamps
+
+
+def _fill_missing_values(values: np.ndarray) -> np.ndarray:
+    if values.size == 0:
+        return values
+
+    finite_mask = np.isfinite(values)
+    if finite_mask.all():
+        return values
+    if not finite_mask.any():
+        return np.zeros_like(values)
+
+    indices = np.arange(values.size)
+    filled = values.copy()
+    filled[~finite_mask] = np.interp(indices[~finite_mask], indices[finite_mask], values[finite_mask])
+    return filled
+
+
+def _inject_noise(values: np.ndarray, mode: str, sigma_scale: float, burst_prob: float, drift_scale: float, dropout_prob: float, seed: int) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    noisy = np.asarray(values, dtype=float).copy()
+    baseline_std = float(np.std(noisy))
+    if baseline_std < 1e-12:
+        baseline_std = max(float(np.max(np.abs(noisy))) * 0.1, 1.0)
+
+    sigma = sigma_scale * baseline_std
+    drift_per_sample = drift_scale * baseline_std
+
+    for idx, value in enumerate(noisy):
+        if rng.random() < dropout_prob:
+            noisy[idx] = np.nan
+            continue
+
+        if mode == "Gaussian":
+            value += rng.normal(0.0, sigma)
+        elif mode == "Burst":
+            value += rng.normal(0.0, sigma)
+            if rng.random() < burst_prob:
+                value += rng.choice((-1.0, 1.0)) * abs(rng.normal(6.0 * sigma, 2.0 * sigma))
+        elif mode == "Drift + stuck":
+            value += drift_per_sample * idx
+            value += rng.normal(0.0, 0.5 * sigma)
+            if idx > noisy.size // 2 and rng.random() < 0.15 and idx > 0:
+                value = noisy[idx - 1]
+        elif mode == "Mixed realistic":
+            value += rng.normal(0.0, sigma)
+            if rng.random() < burst_prob:
+                value += rng.choice((-1.0, 1.0)) * abs(rng.normal(4.0 * sigma, 1.5 * sigma))
+            if idx > noisy.size // 3:
+                value += drift_per_sample * (idx - noisy.size // 3)
+            if rng.random() < 0.05:
+                value = round(value * 1e6) / 1e6
+        else:
+            raise ValueError(f"Unknown noise mode: {mode}")
+
+        noisy[idx] = value
+
+    return _fill_missing_values(noisy)
+
+
+def _hankel_scores(series: np.ndarray, window_len: int, hankel_rows: int, step: int) -> Tuple[np.ndarray, np.ndarray]:
+    if window_len < 3:
+        raise ValueError("Window length must be at least 3")
+    if hankel_rows < 2 or hankel_rows >= window_len:
+        raise ValueError("Hankel rows must satisfy 2 <= rows < window length")
+
+    series = np.asarray(series, dtype=float)
+    if series.size < window_len:
+        return np.asarray([], dtype=int), np.asarray([], dtype=float)
+
+    starts: List[int] = []
+    scores: List[float] = []
+    for start in range(0, series.size - window_len + 1, step):
+        window = series[start : start + window_len]
+        window = window - float(np.mean(window))
+        hankel = np.lib.stride_tricks.sliding_window_view(window, hankel_rows).T
+        singular_values = np.linalg.svd(hankel, compute_uv=False)
+        total = float(np.sum(singular_values))
+        score = float(np.sum(singular_values[1:]) / max(total, 1e-12))
+        starts.append(start)
+        scores.append(score)
+
+    return np.asarray(starts, dtype=int), np.asarray(scores, dtype=float)
+
+
+def _window_labels(labels: np.ndarray, starts: np.ndarray, window_len: int) -> np.ndarray:
+    if labels.size == 0 or starts.size == 0:
+        return np.asarray([], dtype=int)
+    out = []
+    for start in starts:
+        stop = min(start + window_len, labels.size)
+        out.append(int(np.any(labels[start:stop] > 0)))
+    return np.asarray(out, dtype=int)
+
+
+def _binary_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
+    if y_true.size == 0 or y_pred.size == 0:
+        return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+
+    tp = int(np.sum((y_true == 1) & (y_pred == 1)))
+    fp = int(np.sum((y_true == 0) & (y_pred == 1)))
+    fn = int(np.sum((y_true == 1) & (y_pred == 0)))
+
+    precision = tp / max(tp + fp, 1)
+    recall = tp / max(tp + fn, 1)
+    denom = max(precision + recall, 1e-12)
+    f1 = 2.0 * precision * recall / denom
+
+    return {"precision": precision, "recall": recall, "f1": f1}
 
 
 def one_way_prop_delay_s(d_km: float) -> float:

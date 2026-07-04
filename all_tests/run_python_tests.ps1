@@ -12,6 +12,9 @@ python .\all_tests\test_relay_text_resilience.py
 # ── Dual-PHY 437 MHz ────────────────────────────────────────────────────
 python .\all_tests\test_dual_phy_437.py
 
+# ── Physics consistency ────────────────────────────────────────────────
+python .\all_tests\test_link_budget_consistency.py
+
 # ── Correction algorithms ────────────────────────────────────────────────
 python .\all_tests\test_kalman_gaussian_3sat.py
 python .\all_tests\test_noise_weighting_and_algorithms.py

@@ -96,7 +96,7 @@ Byte 3: [ SEQ[3:0]               | DEGR[3:0]              ]
 Byte 4: [ FLAGS[3:0]             | CKSM[3:0]              ]
 ```
 
-The transport extension (bytes 5–N) carries the PHY profile (byte 8), a **constellation group identifier** (byte 6) for basic isolation between operators, and session/datagram metadata. Frames with an unrecognized group ID are silently dropped. The last byte is a full‑frame CRC‑8/MAXIM checksum.
+The transport extension (bytes 5–N) carries the PHY profile (byte 8), the advertised PHY capability mask (byte 9), and session/datagram metadata. The bridge drops malformed packets and duplicate replays; cryptographic or group-ID-based isolation remains future work. The last byte is a full‑frame CRC‑8/MAXIM checksum.
 
 ## 3. On‑Board Anomaly Detection via Time‑Lagged SVD
 
@@ -188,13 +188,13 @@ The combined coding expansion is 2.287×.
 
 ### 5.4 Link Budget
 
-Free‑space path loss at 437 MHz and 1000 km is 145.2 dB. System noise temperature is \(T_{sys} \approx 1130\) K (NF = 5 dB, omnidirectional antenna). For the control channel (12.5 kHz, 9.6 kbps):
+Free‑space path loss at 437 MHz and 1000 km is 145.2 dB. System noise temperature is \(T_{sys} \approx 727\) K (NF = 5 dB, \(T_{\text{ant}} = 100\) K, omnidirectional antenna). For the control channel (12.5 kHz, 9.6 kbps):
 
 \[
 \frac{E_b}{N_0} = P_{tx} + G_t + G_r - L_{fs} - L_{misc} - L_{\text{Doppler}} - 10\log_{10}(k T_{sys} B) + 10\log_{10}\!\left(\frac{B}{R_b}\right).
 \]
 
-With \(P_{tx}=30\) dBm, \(G_t=G_r=2\) dBi, \(L_{misc}=3\) dB, \(L_{\text{Doppler}}=1.5\) dB (Doppler shift ≈10.9 kHz), we obtain \(E_b/N_0 \approx 9.9\) dB. The margin over the ~5.5 dB required for PER ≤ 1 % (Conv+RS) is **~4.4 dB**. The bulk channel at 19.2 kbps enjoys the same \(B/R_b\) ratio, hence identical margin. Maximum usable range exceeds 2 800 km; geometry, not link budget, limits neighbourhood size.
+With \(P_{tx}=30\) dBm, \(G_t=G_r=2\) dBi, \(L_{misc}=3\) dB, \(L_{\text{Doppler}}=1.5\) dB (Doppler shift ≈10.9 kHz), we obtain \(E_b/N_0 \approx 14.4\) dB. The margin over the ~5.5 dB required for PER ≤ 1 % (Conv+RS) is **~8.9 dB**. The bulk channel at 19.2 kbps enjoys the same \(B/R_b\) ratio, hence identical margin. Maximum usable range exceeds 2 800 km; geometry, not link budget, limits neighbourhood size.
 
 ### 5.5 PER and Frame Timing
 
@@ -270,7 +270,7 @@ All 273 unit tests pass: encoder/decoder (70), payload codec (65), frame pipelin
 
 ## 8. Limitations and Future Work
 
-- **Security:** Currently a static constellation group identifier provides basic isolation; future work will add cryptographic authentication.
+- **Security:** Current isolation is address- and state-based; future work will add cryptographic authentication and, if needed, explicit group-ID filtering.
 - **Borrowing for imaging:** The current borrow service transfers generic 3‑axis vectors; extension to imaging payloads (with attitude, calibration, and exposure metadata) is planned.
 - **Interference simulation:** The PHY model includes Doppler and AWGN, but adjacent‑channel interference and multipath will be added in a future release.
 - **Hardware‑in‑the‑loop:** On‑orbit validation with a real UHF transceiver is needed to confirm BER/PER behaviour.

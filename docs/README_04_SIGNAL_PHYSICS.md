@@ -116,7 +116,7 @@ System noise temperature from receiver noise figure NF and antenna temperature:
 
 $$T_{sys} = T_{\text{ant}} + T_0 \cdot (10^{NF/10} - 1), \quad T_0 = 290\,\text{K}$$
 
-For NF = 5 dB, $T_{\text{ant}} = 100$ K: $T_{sys} \approx 1130$ K.
+For NF = 5 dB, $T_{\text{ant}} = 100$ K: $T_{sys} \approx 727$ K.
 
 Noise power in bandwidth $B$:
 
@@ -147,12 +147,12 @@ This fits comfortably within the 12.5 kHz control channel. A guard margin of **1
 | Pointing loss | 0 dB (omnidirectional) |
 | Misc loss | 3 dB |
 | Doppler margin | 1.5 dB |
-| Noise (12.5 kHz, 1130 K) | −124.6 dBm |
-| **SNR** | **−121.3 + 30 + 4 − 4.5 + 124.6 = +8.8 dB** |
+| Noise (12.5 kHz, 727 K) | −129.0 dBm |
+| **SNR** | **30 + 2 + 2 − 145.3 − 3 − 1.5 + 129.0 = +13.2 dB** |
 | B/Rb ratio (GMSK) | +1.15 dB |
-| **Eb/N0** | **+9.9 dB** |
+| **Eb/N0** | **+14.4 dB** |
 | Required Eb/N0 (PER<1%) | ~5.5 dB (GMSK Conv+RS) |
-| **Link margin** | **~4.4 dB** |
+| **Link margin** | **~8.9 dB** |
 
 ---
 
@@ -171,7 +171,7 @@ Approximate PER at 1000 km (from simulation, GMSK Conv+RS):
 | 8 dB | ~1×10⁻⁷ | ~0.005% |
 | 10 dB | ~1×10⁻⁹ | negligible |
 
-At the reference link budget above (+8.8 dB Eb/N0), PER ≈ 0.01% — well below the ARQ retry budget.
+At the reference link budget above (+14.4 dB Eb/N0), PER is comfortably below 0.01% — well below the ARQ retry budget.
 
 ---
 
