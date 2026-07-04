@@ -23,8 +23,8 @@ class EnergyAssumptions:
     conv_rate: float = 0.5
     rs_data_symbols: int = 223
     rs_total_symbols: int = 255
-    control_bps: float = 12_500.0
-    bulk_bps: float = 25_000.0
+    control_bps: float = 9_600.0
+    bulk_bps: float = 19_200.0
     useful_payload_bytes: int = 45
     compression_ratio: float = 3.0
     relay_per: float = 0.001

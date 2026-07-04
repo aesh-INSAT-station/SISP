@@ -49,23 +49,25 @@
 
 ---
 
-## Protocol Energy (derived — 100% transparent)
+## Protocol Energy (derived — 100% transparent, matches `scripts/energy_audit.py`)
 
 | Quantity | Formula | Value |
 |---|---|---|
 | Physical frame | 64 bytes = 512 bits | 512 bits |
 | Coding expansion (Conv+RS) | 1/(0.5 × 223/255) | ×2.287 |
 | Air bits per frame | 512 × 2.287 | 1,171 bits |
-| Bit rate (GMSK, 12.5 kHz) | B × 1 bit/s/Hz | 12,500 bps |
-| Frame time | 1,171 / 12,500 | **93.68 ms** |
+| Bit rate, control channel (GMSK, 12.5 kHz) | 9,600 bps (0.768 b/s/Hz) | **9,600 bps** |
+| Bit rate, bulk channel (GMSK, 25 kHz) | 19,200 bps | **19,200 bps** |
+| Frame time, control | 1,171 / 9,600 | **122.0 ms** |
+| Frame time, bulk | 1,171 / 19,200 | **61.0 ms** |
 | Frames per correction event | 1 REQ + 8 RSP | 9 frames |
-| Requester energy per correction | $(10 + 8 \times 2.5) \times 0.09368$ | **2.81 J** |
-| Network energy per correction | $((1+8)\times10 + 2\times8\times2.5) \times 0.09368$ | **12.18 J** |
-| Daily requester correction energy | $24 \times 2.81 / 3600$ | **18.7 mWh** |
-| Daily network correction energy | $24 \times 12.18 / 3600$ | **81.2 mWh** |
-| Heartbeat maintenance | 12/hour, TX own + RX 8 neighbours | **224.8 mWh/day** |
-| No-relay daily protocol participation | corrections + heartbeat maintenance | **243.6 mWh/day** |
-| As % of 5 W onboard budget | 243.6 mWh / (5 W × 24 h) | **0.203%** |
+| Requester energy per correction | $(10 + 8 \times 2.5) \times 0.1220$ | **3.66 J** |
+| Network energy per correction | $((1+8)\times10 + 2\times8\times2.5) \times 0.1220$ | **15.86 J** |
+| Daily requester correction energy | $24 \times 3.66 / 3600$ | **24.4 mWh** |
+| Daily network correction energy | $24 \times 15.86 / 3600$ | **105.7 mWh** |
+| Heartbeat maintenance (12/hour, TX own + RX 8 neighbours) | 288 TX + 2,304 RX frames/day | **293 mWh/day** |
+| No-relay daily protocol participation | corrections + heartbeat maintenance | **317 mWh/day** |
+| As % of 5 W onboard budget | 0.317 Wh / (5 W × 24 h) | **0.26%** |
 
 ---
 

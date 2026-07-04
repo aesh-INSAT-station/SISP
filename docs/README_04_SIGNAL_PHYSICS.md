@@ -24,8 +24,8 @@ Two physical layer profiles share the same 437 MHz centre frequency:
 
 | Profile | Enum | Bandwidth | Bit rate (GMSK) | Usage |
 |---|---|---|---|---|
-| `CONTROL_437_NARROW` | `0x00` | 12.5 kHz | 12,500 bps | All control messages |
-| `BULK_437_WIDE` | `0x01` | 25 kHz | 25,000 bps | `DOWNLINK_DATA`, `DOWNLINK_ACK` |
+| `CONTROL_437_NARROW` | `0x00` | 12.5 kHz | 9,600 bps | All control messages |
+| `BULK_437_WIDE` | `0x01` | 25 kHz | 19,200 bps | `DOWNLINK_DATA`, `DOWNLINK_ACK` |
 
 The state machine selects the profile per-frame in `select_tx_phy()`. The choice is encoded in **frame byte 8** and validated in `test_dual_phy_437.py` (8/8 assertions pass).
 
@@ -134,7 +134,7 @@ At 437 MHz with relative velocity $v_r = 7.5$ km/s between LEO satellites:
 
 $$\Delta f_{\max} = 437 \times 10^6 \times \frac{7500}{3 \times 10^8} \approx 10.9\,\text{kHz}$$
 
-This nearly fills the 12.5 kHz control channel. A guard margin of **1.5 dB** is applied in the UHF link budget to account for residual frequency error after automatic frequency correction (AFC).
+This fits comfortably within the 12.5 kHz control channel. A guard margin of **1.5 dB** is applied in the UHF link budget to account for residual frequency error after automatic frequency correction (AFC).
 
 ### Reference Link Budget (1000 km, 437 MHz, GMSK Conv+RS)
 
@@ -149,10 +149,10 @@ This nearly fills the 12.5 kHz control channel. A guard margin of **1.5 dB** is 
 | Doppler margin | 1.5 dB |
 | Noise (12.5 kHz, 1130 K) | −124.6 dBm |
 | **SNR** | **−121.3 + 30 + 4 − 4.5 + 124.6 = +8.8 dB** |
-| B/Rb ratio (GMSK) | 0 dB |
-| **Eb/N0** | **+8.8 dB** |
+| B/Rb ratio (GMSK) | +1.15 dB |
+| **Eb/N0** | **+9.9 dB** |
 | Required Eb/N0 (PER<1%) | ~5.5 dB (GMSK Conv+RS) |
-| **Link margin** | **~3.3 dB** |
+| **Link margin** | **~4.4 dB** |
 
 ---
 
@@ -197,7 +197,7 @@ Inverting the link budget for PER ≤ 1%, GMSK Conv+RS:
 | Configuration | $d_{\max}$ |
 |---|---|
 | 437 MHz control (12.5 kHz), 1 W omni | ~2,800 km |
-| 437 MHz bulk (25 kHz), 1 W omni | ~2,100 km |
+| 437 MHz bulk (25 kHz), 1 W omni | ~2,800 km |
 | Ka-band (26 GHz), 1 W, +23 dBi directive | ~4,400 km |
 
 All ranges exceed typical LEO inter-satellite spacing (400–600 km). **Geometry, not link budget, limits neighbourhood size.**
