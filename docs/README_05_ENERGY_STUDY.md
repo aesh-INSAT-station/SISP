@@ -1,6 +1,7 @@
 # Energetic Study
 
 **Source files:**
+- `scripts/energy_audit.py` — canonical calculation source for paper numbers
 - `simulation for signal and physics/sisp_unified_sim.py` — Streamlit: Timing & Energy tab, Protocol Message Energy tab, KPI Dashboard tab
 - `simulation for signal and physics/UHF_437_two_mode_phy_hardware_math_study.md` — Numeric tables
 
@@ -26,14 +27,14 @@ $$t_{\text{frame}} = \frac{N_{\text{air}}}{R_b}, \quad N_{\text{air}} = 512 \tim
 | Conv coding expansion | 2.0× |
 | Conv+RS coding expansion | 2.287× |
 
-**Frame time for each configuration:**
+**Frame time for each configuration (hardware-realistic GMSK bitrates):**
 
 | Channel | Modulation | FEC | $R_b$ (bps) | $t_{\text{frame}}$ |
 |---|---|---|---|---|
-| 12.5 kHz CTRL | GMSK BT=0.3 | None | 12,500 | 41 ms |
-| 12.5 kHz CTRL | GMSK BT=0.3 | Conv | 12,500 | 82 ms |
-| 12.5 kHz CTRL | GMSK BT=0.3 | Conv+RS | 12,500 | 93.6 ms |
-| 25 kHz BULK | GMSK BT=0.3 | Conv+RS | 25,000 | 46.8 ms |
+| 12.5 kHz CTRL | GMSK BT=0.3 | None | 9,600 | 53.3 ms |
+| 12.5 kHz CTRL | GMSK BT=0.3 | Conv | 9,600 | 106.7 ms |
+| 12.5 kHz CTRL | GMSK BT=0.3 | Conv+RS | 9,600 | **122.0 ms** |
+| 25 kHz BULK | GMSK BT=0.3 | Conv+RS | 19,200 | **61.0 ms** |
 
 ---
 
@@ -53,24 +54,35 @@ $$E_{\text{snap}} = \underbrace{P_{TX} \cdot t_{\text{frame}}}_{\text{requester 
 
 Simplified for $N$ symmetric neighbours:
 
-$$E_{\text{snap}} \approx (1 + N)(P_{TX} + P_{RX}) \cdot t_{\text{frame}}$$
+$$E_{\text{network}} \approx \left((1+N)P_{TX} + 2NP_{RX}\right)t_{\text{frame}}$$
 
-### Numerics (N=8, Conv+RS, 12.5 kHz)
+The requester-only battery cost is:
+
+$$E_{\text{requester}} \approx \left(P_{TX} + NP_{RX}\right)t_{\text{frame}}$$
+
+### Numerics (N=8, Conv+RS, 12.5 kHz, 9600 bps)
 
 | Item | Value |
 |---|---|
-| Frame time | 93.6 ms |
-| Total on-air time | $9 \times 93.6 + 6.6 \approx 849$ ms |
-| Within 5-second timer? | **YES** (849 ms ≪ 5000 ms) |
-| Requester TX energy | $10 \times 0.0936 = 0.936$ J |
-| Requester RX energy | $2.5 \times 8 \times 0.0936 = 1.87$ J |
-| Neighbours TX energy | $8 \times 10 \times 0.0936 = 7.49$ J |
-| Neighbours RX energy | $8 \times 2.5 \times 0.0936 = 1.87$ J |
-| **Network total** | **~12.2 J per correction event** |
+| Frame time | 122.0 ms |
+| Total on-air time | $9 \times 122.0 + 6.7 \approx 1.10$ s |
+| Within 5-second timer? | **YES** (1.10 s << 5000 ms) |
+| Requester TX energy | $10 \times 0.1220 = 1.22$ J |
+| Requester RX energy | $2.5 \times 8 \times 0.1220 = 2.44$ J |
+| **Requester battery** | **3.66 J per correction event** |
+| Neighbours TX energy | $8 \times 10 \times 0.1220 = 9.76$ J |
+| Neighbours RX energy | $8 \times 2.5 \times 0.1220 = 2.44$ J |
+| **Network total** | **15.86 J per correction event** |
 
 At 24 corrections per day:
 
-$$E_{\text{daily,corr}} = 24 \times 12.2 \approx 293\,\text{J} \approx 0.081\,\text{Wh}$$
+Requester battery:
+
+$$E_{\text{daily,corr,requester}} = 24 \times 3.66 \approx 87.8\,\text{J} \approx 0.0244\,\text{Wh}$$
+
+Network total:
+
+$$E_{\text{daily,corr,network}} = 24 \times 15.86 \approx 380.6\,\text{J} \approx 0.106\,\text{Wh}$$
 
 ---
 
@@ -94,7 +106,7 @@ Total energy:
 
 $$E_{\text{bulk}} = t_{\text{bulk}} \times (P_{TX} + P_{RX})$$
 
-### Numerics: 1 MiB Relay (25 kHz, GMSK, Conv+RS)
+### Numerics: 1 MiB Relay (25 kHz, GMSK, Conv+RS, 19,200 bps)
 
 | Parameter | Value |
 |---|---|
@@ -102,23 +114,22 @@ $$E_{\text{bulk}} = t_{\text{bulk}} \times (P_{TX} + P_{RX})$$
 | Compression ratio | 3× |
 | Effective bytes | 349,525 bytes |
 | Frames needed | $\lceil 349,525 / 45 \rceil = 7,768$ |
-| Frame time (25 kHz, Conv+RS) | 46.8 ms |
+| Frame time (25 kHz, Conv+RS) | 61.0 ms |
 | PER @ 1000 km | ~0.1% |
-| Expected frames (ARQ) | 7,776 |
-| **Total time** | **7,776 × 46.8 ms ≈ 364 s ≈ 6.1 min** |
-| Tx energy | $364 × 10 = 3,640$ J = 1.01 Wh |
-| Rx energy | $364 × 2.5 = 910$ J = 0.25 Wh |
-| **Total energy** | **4,550 J ≈ 1.26 Wh** |
+| Expected frames (ARQ) | 7,775.8 |
+| **Total time** | **7,775.8 × 61.0 ms = 474.3 s = 7.91 min** |
+| Tx energy | $474.3 \times 10 = 4,743$ J = 1.32 Wh |
+| Rx energy | $474.3 \times 2.5 = 1,186$ J = 0.33 Wh |
+| **Total energy** | **5,929 J = 1.65 Wh** |
 | Fits in 15-min LoS? | **YES** |
 
-For 10 MiB relay:
+For 10 MiB relay (still 19,200 bps):
 
 | Config | Time | Total energy |
 |---|---|---|
-| 25 kHz GMSK Conv+RS | ~61 min | 12.6 Wh |
-| 25 kHz BPSK Conv+RS | ~30 min | 6.26 Wh |
+| 25 kHz GMSK Conv+RS | ~79.1 min | 16.5 Wh |
 
-**Note:** 10 MiB does NOT fit in a single 15-minute LoS window without Ka-band. 1 MiB comfortably fits.
+**Note:** 10 MiB does NOT fit in a single 15-minute LoS window at 19.2 kbps; Ka-band or higher-rate SDR modes would be required.
 
 ---
 
@@ -138,15 +149,17 @@ The "Protocol Message Energy" tab in the Streamlit app runs the C++ DLL and meas
 
 **Key insight:** Correction responses dominate because each of $N$ neighbours must transmit a full 64-byte frame. This motivates the $N \leq 8$ cap in the spec.
 
-**Daily energy breakdown (analytic mode, 24 corrections/day, 12 HB/hour):**
+**Daily single-satellite operating tempo (analytic mode):**
 
-| Service | Frames/day | Energy (J) |
-|---|---|---|
-| CORRECTION_REQ | 24 | 22.5 |
-| CORRECTION_RSP | 24 × 8 = 192 | 180 |
-| HEARTBEAT | 288 | 27 |
-| FAILURE | 0 | 0 |
-| **Total** | 504 | **229 J ≈ 0.064 Wh** |
+Assumptions: 24 correction cycles initiated per day, 8 responding neighbours, and 12 heartbeat broadcasts/hour (one every 5 minutes). The correction row reports the initiating satellite's battery cost; the network total for those same correction events is 380.6 J = 0.106 Wh.
+
+| Activity | Frames/day seen by one satellite | Battery energy |
+|---|---:|---:|
+| Correction initiator | 24 TX + 192 RX | 87.8 J = 0.0244 Wh |
+| Own heartbeat TX | 288 TX | 351.4 J = 0.0976 Wh |
+| Neighbour heartbeat RX | 2,304 RX | 702.7 J = 0.1952 Wh |
+| Failure | 0 | 0 |
+| **Total, no relay** | 2,808 TX/RX frame actions | **1,141.9 J = 0.317 Wh** |
 
 ---
 
@@ -161,11 +174,13 @@ Typical CubeSat energy constraints:
 | Non-comms load | 200 Wh/day |
 | **Available for comms** | **100 Wh/day** |
 
-SISP correction overhead (24 events/day) at **0.064 Wh = 0.064% of daily generation** — negligible.
+SISP correction initiator overhead (24 events/day) at **0.0244 Wh = 0.0081% of daily generation** is negligible.
 
-One 1 MiB relay at **1.26 Wh = 0.42% of daily generation** — affordable.
+Heartbeat maintenance with 8 neighbours and 12 heartbeats/hour at **0.293 Wh/day = 0.098% of daily generation** is also small.
 
-One 10 MiB relay at **12.6 Wh = 4.2% of daily generation** — significant; plan around LoS windows.
+One 1 MiB relay at **1.65 Wh = 0.55% of daily generation** is affordable.
+
+One 10 MiB relay at **16.5 Wh = 5.5% of daily generation** is significant; plan around LoS windows.
 
 ---
 
@@ -175,8 +190,8 @@ For the same 1 MiB payload, UHF downlink to ground (437 MHz, 1200 km slant range
 
 | Metric | ISL (sat-to-sat) | Downlink (sat-to-ground) |
 |---|---|---|
-| Spacecraft Tx energy | 1.01 Wh | 0.91 Wh |
-| Total time | 6.1 min | ~5.5 min |
+| Spacecraft Tx energy | 1.32 Wh | 1.32 Wh |
+| Total time | 7.91 min | ~7.91 min |
 | Availability | LoS to neighbour (~30–45 min/orbit) | Ground pass (~10–15 min/pass) |
 
 **Conclusion:** The ISL path costs only marginally more energy than the ground downlink at the same frequency and power. The ISL advantage is **availability** — neighbours are visible far more often than ground stations, enabling more frequent corrections and emergency relays.
@@ -187,13 +202,13 @@ For the same 1 MiB payload, UHF downlink to ground (437 MHz, 1200 km slant range
 
 As $N$ increases (more neighbours responding to a correction request):
 
-$$E_{\text{snap}}(N) = (1 + N)(P_{TX} + P_{RX}) \cdot t_{\text{frame}}$$
+$$E_{\text{network}}(N) = \left((1+N)P_{TX} + 2NP_{RX}\right)t_{\text{frame}}$$
 
 | N | $t_{\text{snap}}$ | $E_{\text{snap}}$ | Correction quality gain |
 |---|---|---|---|
-| 1 | 186 ms | 2.4 J | minimal |
-| 4 | 468 ms | 6.1 J | good |
-| **8** | **849 ms** | **12.2 J** | **optimal** |
-| 16 | 1,598 ms | 20.8 J | diminishing returns |
+| 1 | 252 ms | 3.05 J | minimal |
+| 4 | 619 ms | 8.54 J | good |
+| **8** | **1.10 s** | **15.86 J** | **optimal** |
+| 16 | 2.09 s | 30.50 J | diminishing returns |
 
 The recommended neighbourhood size is **N = 4–8**, balancing correction quality against energy cost and the 5-second timer constraint.

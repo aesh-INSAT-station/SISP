@@ -1,0 +1,14 @@
+{
+  "name": "sisp-bridge-server",
+  "version": "1.0.0",
+  "description": "SISP C++ protocol bridge — WebSocket gateway to sisp.dll",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "koffi": "^2.16.2",
+    "ws": "^8.20.0"
+  }
+}

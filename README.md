@@ -2,7 +2,7 @@
 
 A cooperative, self-healing satellite protocol stack for CubeSat constellations.
 Satellites correct degraded sensors, relay data across visibility gaps, and borrow
-healthy sensors from neighbours — fully autonomously, with no ground intervention.
+healthy sensors from neighbours - fully autonomously, with no ground intervention.
 
 **273/273 C++ tests pass · 94.3% RMSE improvement (IT-05) · 12.5 kHz + 25 kHz dual-PHY**
 
@@ -19,27 +19,53 @@ SISP/
 │   ├── tests/                   273 unit + integration tests
 │   └── build/Release/           Prebuilt: sisp.dll, test_runner.exe
 │
-├── simulation for signal and physics/   Physical layer + sustainability simulation
+├── simulation/                  JS/Cesium protocol visualizer (React + Three.js)
+│   ├── src/                     Simulation engine, state machine, OPS-SAT detector
+│   ├── server/                  BRIDGE DLL server (websocket → C++ bindings)
+│   ├── package.json             → npm install && npm run dev → http://localhost:5173
+│   └── README.md
+│
+├── simulation for signal and physics/   Physical layer + sustainability analysis
 │   ├── sisp_unified_sim.py      Streamlit: geometry, BER/PER, energy, dual-PHY  → port 8501
-│   ├── sisp_value_dashboard.py  Streamlit: sustainability & impact KPIs          → port 8503
+│   ├── sisp_value_dashboard.py  Streamlit: sustainability & impact KPIs          → port 8501
 │   ├── validate_bpsk_awgn.py    Monte Carlo BER validation
-│   └── requirements.txt
+│   ├── requirements.txt
+│   └── legacy documentation/    Archived study notes (preserved for reference)
+│
+├── sisp/                        SVD anomaly detection Python package
+│   ├── anomaly/svd.py           Rank selection, model fitting, reconstruction error
+│   ├── preprocessing/           Scaler, cleaner, metadata extraction
+│   ├── io/                      CSV/parquet loader and writer
+│   └── utils/                   Paths and helpers
+│
+├── sisp_svd_anomaly.py          SVD anomaly detection CLI (entry point)
+├── python_satellite_sim_v2.py   Level-3 multi-satellite Python harness (C++ DLL bindings)
+│
+├── pipelines/                   Batch-processing run scripts
+│   ├── run_ingest.py
+│   ├── run_preprocess.py
+│   └── run_svd.py
+│
+├── scripts/                     Utility scripts
+│   ├── inspect_artifacts.py
+│   ├── energy_audit.py
+│   └── preprocess_segments_for_js.py
 │
 ├── all_tests/                   Python integration test suite
 │   ├── test_dual_phy_437.py     Dual-PHY PHY-profile correctness (8/8 PASS)
 │   ├── test_integration_matrix_it02_it03_it05_it06.py
 │   ├── test_kalman_gaussian_3sat.py
 │   ├── test_noise_weighting_and_algorithms.py
-│   └── ...
+│   └── scale_testing/           Scale/capacity tests
 │
-├── sisp_svd_anomaly.py          SVD anomaly detection pipeline (CLI + library)
-├── python_satellite_sim_v2.py   Level-3 multi-satellite Python harness
-├── data/raw/segments.csv        OPSSAT-AD telemetry dataset
-├── logs/                        Test run logs (auto-generated)
+├── data/raw/segments.csv        OPSSAT-AD telemetry dataset (303k rows, 8 channels)
+│
+├── config/settings.py           Shared configuration
 │
 └── docs/                        Research paper + detailed READMEs
     ├── SISP_RESEARCH_PAPER.md   Full academic paper (8 sections, references)
-    ├── SISP_KPI_SNAPSHOT.md     Static KPI tables for screenshots / slides
+    ├── SISP_KPI_SNAPSHOT.md     Static KPI tables (formulas, sources, all numbers)
+    ├── SISP_REAL_TEST_RESULTS.md  OPS-SAT detector validation + correction/relay tests
     ├── README_00_OVERVIEW.md    Project overview and key numbers
     ├── README_01_STATE_MACHINE.md
     ├── README_02_SVD_CHI_SQUARE.md
@@ -88,25 +114,37 @@ PYTHONIOENCODING=utf-8 python all_tests/test_noise_weighting_and_algorithms.py
 # Expected: 273/273 PASS
 ```
 
-### 4. Physical layer simulation (Streamlit)
+### 4. JS/Cesium protocol visualizer (live demo)
+
+```bash
+cd simulation
+npm install
+npm run dev
+# Opens: http://localhost:5173
+# Shows: 8-sat constellation with real OPS-SAT anomaly detection,
+#        correction/relay/borrow packet log, satellite state panel
+```
+
+### 5. Physical layer simulation (Streamlit)
 
 ```bash
 streamlit run "simulation for signal and physics/sisp_unified_sim.py"
 # Opens: http://localhost:8501
-# Tabs: Geometry (LoS+Doppler), PHY (BER/PER), Timing & Energy, Dual-PHY protocol, KPIs
+# Tabs: Geometry (LoS+Doppler), PHY (BER/PER, ALOHA collision proxy),
+#        Timing & Energy, Dual-PHY protocol, KPIs, Robustness Analysis
 ```
 
-### 5. Sustainability & impact dashboard (Streamlit)
+### 6. Sustainability & impact dashboard (Streamlit)
 
 ```bash
 streamlit run "simulation for signal and physics/sisp_value_dashboard.py"
-# Opens: http://localhost:8503
+# Default: http://localhost:8501 (use --server.port to change)
 # Tabs: Overview, Orbital Sustainability, Sensor Quality, Energy & Climate,
-#        50-Year Projection, Assumptions & Formulas
+#        50-Year Projection, Assumptions & Formulas, Debris-Risk KPIs
 # All numbers derive from sidebar sliders — no hardcoded values.
 ```
 
-### 6. SVD anomaly detection
+### 7. SVD anomaly detection
 
 ```bash
 # List available channels
@@ -122,7 +160,7 @@ python sisp_svd_anomaly.py --channel CADC0894 --plot
 python sisp_svd_anomaly.py --out results/svd_results.csv
 ```
 
-### 7. Validate BPSK BER (Monte Carlo)
+### 8. Validate BPSK BER (Monte Carlo)
 
 ```bash
 python "simulation for signal and physics/validate_bpsk_awgn.py" --bits 500000
@@ -134,13 +172,14 @@ python "simulation for signal and physics/validate_bpsk_awgn.py" --bits 500000
 
 | Document | What it covers |
 |---|---|
-| [docs/SISP_RESEARCH_PAPER.md](docs/SISP_RESEARCH_PAPER.md) | Full paper: state machine, SVD, Kalman, physics, results, novelty vs field |
-| [docs/SISP_KPI_SNAPSHOT.md](docs/SISP_KPI_SNAPSHOT.md) | Static KPI tables (screenshots / slides) |
+| [docs/SISP_RESEARCH_PAPER.md](docs/SISP_RESEARCH_PAPER.md) | Full paper: state machine, SVD, Kalman, physics, results, end-of-life, novelty |
+| [docs/SISP_KPI_SNAPSHOT.md](docs/SISP_KPI_SNAPSHOT.md) | All KPIs with explicit formulas, sources, and recalculated numbers |
+| [docs/SISP_REAL_TEST_RESULTS.md](docs/SISP_REAL_TEST_RESULTS.md) | OPS-SAT ingestion, detector validation, correction/relay/borrow tests |
 | [docs/README_00_OVERVIEW.md](docs/README_00_OVERVIEW.md) | Project overview and key numbers |
 | [docs/README_01_STATE_MACHINE.md](docs/README_01_STATE_MACHINE.md) | All 21 states, 24 events, transition flows, Python API |
 | [docs/README_02_SVD_CHI_SQUARE.md](docs/README_02_SVD_CHI_SQUARE.md) | SVD rank selection, chi-square NIS gate, tuning |
 | [docs/README_03_CORRECTION_ALGORITHMS.md](docs/README_03_CORRECTION_ALGORITHMS.md) | Kalman, weighted median, hybrid, NIS-gated — benchmark tables |
-| [docs/README_04_SIGNAL_PHYSICS.md](docs/README_04_SIGNAL_PHYSICS.md) | GMSK BER, K=7 union bound, link budget, Doppler, dual-PHY |
+| [docs/README_04_SIGNAL_PHYSICS.md](docs/README_04_SIGNAL_PHYSICS.md) | GMSK BER, K=7 union bound, full 9-step link budget, Doppler, dual-PHY |
 | [docs/README_05_ENERGY_STUDY.md](docs/README_05_ENERGY_STUDY.md) | Per-frame energy, correction snapshot, bulk relay |
 | [docs/README_06_TEST_RESULTS.md](docs/README_06_TEST_RESULTS.md) | All extracted log metrics and result tables |
 
@@ -151,7 +190,7 @@ python "simulation for signal and physics/validate_bpsk_awgn.py" --bits 500000
 Without SISP, a satellite with a failed sensor degrades or ends its mission early, waits up to 90 minutes for a ground-station pass to downlink data, and must be replaced at full launch cost when hardware fails.
 With SISP, the same satellite borrows a working sensor from a neighbour in under 5 seconds, relays data through ISL during 45% of each orbit instead of 10%, and extends its operational life by ~45% — cutting replacement launches, launch CO₂, and orbital debris proportionally.
 Correction quality improves by **94.3% RMSE** over 30-day cycles (Kalman, IT-05) and holds at **85.6%** under 10% packet loss (IT-06), validated by 273/273 automated C++ tests and 10 Python integration scenarios.
-The protocol overhead is negligible: a full correction round with 6 neighbours costs **93.6 ms** and **~0.022% of the daily onboard energy budget**.
+The protocol overhead is negligible: a full correction round with 8 neighbours takes **~850 ms**, costs **3.66 J** on the requesting satellite, and a no-relay daily operating tempo (24 corrections + 288 heartbeats) uses **317 mWh/day — 0.26% of a 5 W onboard energy budget**.
 Full details, formulas, and assumption transparency: [`docs/SISP_KPI_SNAPSHOT.md`](docs/SISP_KPI_SNAPSHOT.md) · [`docs/SISP_RESEARCH_PAPER.md`](docs/SISP_RESEARCH_PAPER.md).
 
 ---
@@ -174,13 +213,13 @@ Full details, formulas, and assumption transparency: [`docs/SISP_KPI_SNAPSHOT.md
 
 | What to change | File | Symbol |
 |---|---|---|
-| Correction algorithm | `src/sisp_state_machine.cpp` | `ctx.correction_filter` via `sim_use_kalman_filter()` |
-| Kalman noise parameters | `sim_hooks.cpp` | `sim_use_kalman_filter(ctx, q, r)` |
+| Correction algorithm | `c++ implemnetation/src/sisp_state_machine.cpp` | `ctx.correction_filter` via `sim_use_kalman_filter()` |
+| Kalman noise parameters | `c++ implemnetation/src/sim_hooks.cpp` | `sim_use_kalman_filter(ctx, q, r)` |
 | SVD rank / threshold | `sisp_svd_anomaly.py` | `CONFIG` block at top of file |
-| PHY profile selection | `src/sisp_state_machine.cpp` | `select_tx_phy()` |
-| DEGR score formula | `src/sisp_protocol.cpp` | `compute_degr()` |
-| Frame size | `include/sisp_protocol.hpp` | `FRAME_SIZE` (currently 64 bytes) |
-| Timer deadlines | `src/sisp_state_machine.cpp` | `ctx.timer_deadline_ms = g_current_time_ms + N` |
+| PHY profile selection | `c++ implemnetation/src/sisp_state_machine.cpp` | `select_tx_phy()` |
+| DEGR score formula | `c++ implemnetation/src/sisp_protocol.cpp` | `compute_degr()` |
+| Frame size | `c++ implemnetation/include/sisp_protocol.hpp` | `FRAME_SIZE` (currently 64 bytes) |
+| Timer deadlines | `c++ implemnetation/src/sisp_state_machine.cpp` | `ctx.timer_deadline_ms = g_current_time_ms + N` |
 
 ---
 

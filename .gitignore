@@ -6,6 +6,9 @@ __pycache__/
 venv/
 .env
 
+# Node.js
+node_modules/
+
 # Generated data artifacts (re-run pipelines/run_*.py to regenerate)
 data/interim/
 data/output/
@@ -33,3 +36,4 @@ Thumbs.db
 # Pickle / binary artifacts
 *.pkl
 *.parquet
+*.pdf

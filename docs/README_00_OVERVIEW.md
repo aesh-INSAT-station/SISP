@@ -85,7 +85,7 @@ Expected: **273/273 PASS**.
 | GMSK BT=0.3 ISI penalty vs BPSK | 1.67 dB |
 | Max Doppler @ 437 MHz, LEO | ~10.9 kHz |
 | Correction snapshot time (8 neighbours) | ~850 ms (<5 s timer) |
-| 1 MiB relay energy | ~2.53 Wh (0.84% daily budget) |
+| 1 MiB relay energy | ~1.26 Wh link total (0.42% daily generation) |
 
 ---
 

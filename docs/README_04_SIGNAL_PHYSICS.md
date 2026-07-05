@@ -24,8 +24,8 @@ Two physical layer profiles share the same 437 MHz centre frequency:
 
 | Profile | Enum | Bandwidth | Bit rate (GMSK) | Usage |
 |---|---|---|---|---|
-| `CONTROL_437_NARROW` | `0x00` | 12.5 kHz | 12,500 bps | All control messages |
-| `BULK_437_WIDE` | `0x01` | 25 kHz | 25,000 bps | `DOWNLINK_DATA`, `DOWNLINK_ACK` |
+| `CONTROL_437_NARROW` | `0x00` | 12.5 kHz | 9,600 bps | All control messages |
+| `BULK_437_WIDE` | `0x01` | 25 kHz | 19,200 bps | `DOWNLINK_DATA`, `DOWNLINK_ACK` |
 
 The state machine selects the profile per-frame in `select_tx_phy()`. The choice is encoded in **frame byte 8** and validated in `test_dual_phy_437.py` (8/8 assertions pass).
 
@@ -116,7 +116,7 @@ System noise temperature from receiver noise figure NF and antenna temperature:
 
 $$T_{sys} = T_{\text{ant}} + T_0 \cdot (10^{NF/10} - 1), \quad T_0 = 290\,\text{K}$$
 
-For NF = 5 dB, $T_{\text{ant}} = 100$ K: $T_{sys} \approx 1130$ K.
+For NF = 5 dB, $T_{\text{ant}} = 100$ K: $T_{sys} \approx 727$ K.
 
 Noise power in bandwidth $B$:
 
@@ -134,25 +134,26 @@ At 437 MHz with relative velocity $v_r = 7.5$ km/s between LEO satellites:
 
 $$\Delta f_{\max} = 437 \times 10^6 \times \frac{7500}{3 \times 10^8} \approx 10.9\,\text{kHz}$$
 
-This nearly fills the 12.5 kHz control channel. A guard margin of **1.5 dB** is applied in the UHF link budget to account for residual frequency error after automatic frequency correction (AFC).
+This fits comfortably within the 12.5 kHz control channel. A guard margin of **1.5 dB** is applied in the UHF link budget to account for residual frequency error after automatic frequency correction (AFC).
 
 ### Reference Link Budget (1000 km, 437 MHz, GMSK Conv+RS)
 
-| Parameter | Value |
-|---|---|
-| Tx power | 30 dBm (1 W) |
-| Tx gain | 2 dBi (omnidirectional) |
-| Rx gain | 2 dBi |
-| Path loss | 145.3 dB |
-| Pointing loss | 0 dB (omnidirectional) |
-| Misc loss | 3 dB |
-| Doppler margin | 1.5 dB |
-| Noise (12.5 kHz, 1130 K) | −124.6 dBm |
-| **SNR** | **−121.3 + 30 + 4 − 4.5 + 124.6 = +8.8 dB** |
-| B/Rb ratio (GMSK) | 0 dB |
-| **Eb/N0** | **+8.8 dB** |
-| Required Eb/N0 (PER<1%) | ~5.5 dB (GMSK Conv+RS) |
-| **Link margin** | **~3.3 dB** |
+#### Step-by-step calculation
+
+| # | Quantity | Formula | Value | Unit |
+|---|----------|---------|-------|------|
+| 1 | Free-space path loss | \(20\log_{10}(4\pi d f / c)\) | 145.25 | dB |
+| 2 | Receiver noise factor | \(F = 10^{\text{NF}/10},\; \text{NF}=5\) | 3.162 | — |
+| 3 | Receiver noise temp | \(T_{\text{rx}} = T_0(F-1),\; T_0=290\) K | 627.1 | K |
+| 4 | System noise temp | \(T_{\text{sys}} = T_{\text{ant}} + T_{\text{rx}},\; T_{\text{ant}}=100\) K | 727.1 | K |
+| 5 | Noise power | \(N = k T_{\text{sys}} B,\; B=12\,500\) Hz | −129.0 | dBm |
+| 6 | Received power | \(P_{\text{rx}} = P_{\text{tx}} + G_t + G_r - L_{\text{FS}} - L_{\text{misc}} - L_{\text{Doppler}}\) | −115.75 | dBm |
+| 7 | **SNR** | \(P_{\text{rx}} - N_{\text{dBm}}\) | **+13.25** | dB |
+| 8 | Bandwidth-to-rate ratio | \(10\log_{10}(B / R_b),\; R_b=9\,600\) bps | +1.15 | dB |
+| 9 | **\(E_b/N_0\)** | SNR + ratio | **+14.40** | dB |
+| 10 | Required \(E_b/N_0\) (GMSK Conv+RS, PER < 1 %) | BPSK baseline 3.8 dB + GMSK penalty 1.67 dB | ~5.5 | dB |
+| 11 | **Link margin** | \(14.40 - 5.5\) | **8.9** | dB |
+| 12 | Max range (margin→0) | \(1000 \times 10^{8.9/20}\) | ~2 790 | km |
 
 ---
 
@@ -171,7 +172,7 @@ Approximate PER at 1000 km (from simulation, GMSK Conv+RS):
 | 8 dB | ~1×10⁻⁷ | ~0.005% |
 | 10 dB | ~1×10⁻⁹ | negligible |
 
-At the reference link budget above (+8.8 dB Eb/N0), PER ≈ 0.01% — well below the ARQ retry budget.
+At the reference link budget above (+14.4 dB Eb/N0), PER is comfortably below 0.01% — well below the ARQ retry budget.
 
 ---
 
@@ -197,7 +198,7 @@ Inverting the link budget for PER ≤ 1%, GMSK Conv+RS:
 | Configuration | $d_{\max}$ |
 |---|---|
 | 437 MHz control (12.5 kHz), 1 W omni | ~2,800 km |
-| 437 MHz bulk (25 kHz), 1 W omni | ~2,100 km |
+| 437 MHz bulk (25 kHz), 1 W omni | ~2,800 km |
 | Ka-band (26 GHz), 1 W, +23 dBi directive | ~4,400 km |
 
 All ranges exceed typical LEO inter-satellite spacing (400–600 km). **Geometry, not link budget, limits neighbourhood size.**

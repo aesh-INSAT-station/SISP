@@ -18,7 +18,7 @@ SISP/
 │   │   ├── sim_hooks.cpp
 │   │   └── ...
 │   ├── tests/
-│   │   └── test_comprehensive_matrix.cpp  ← 246 tests
+│   │   └── test_comprehensive_matrix.cpp  ← 273 tests
 │   ├── CMakeLists.txt
 │   └── build/                   ← RELEASE folder
 │       ├── bin/Release/
@@ -69,9 +69,9 @@ cd "c:\Users\HP\aesh\SISP\c++ implemnetation\build\Release"
 # Expected output:
 # Level 1 (Codec Tests): 123/123
 # Level 2 (State Machine): 34/34
-# Protocol Simulation: 23/24
+# Protocol Simulation: 25/25
 # ===== Summary =====
-# Executed tests: 246
+# Executed tests: 273
 # Failed groups: 0
 ```
 
