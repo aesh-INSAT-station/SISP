@@ -1,0 +1,150 @@
+\documentclass{article}
+
+\usepackage[margin=0.36in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{helvet}
+\usepackage{xcolor}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+
+\renewcommand{\familydefault}{\sfdefault}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.8pt}
+\setlength{\tabcolsep}{3.6pt}
+\setlist[itemize]{leftmargin=*, nosep, topsep=1pt}
+\renewcommand{\arraystretch}{1.0}
+
+\definecolor{navy}{HTML}{081B33}
+\definecolor{blue}{HTML}{0F67B1}
+\definecolor{green}{HTML}{14784D}
+\definecolor{ink}{HTML}{1F2933}
+\definecolor{muted}{HTML}{5D6B78}
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\newcommand{\labeltext}[1]{{\scriptsize\bfseries\color{muted}\MakeUppercase{#1}}}
+\newcommand{\sectionhead}[1]{\vspace{1.4pt}{\color{navy}\bfseries\MakeUppercase{#1}}\par{\color{blue}\rule{\linewidth}{0.4pt}}\vspace{0.3pt}}
+\newcommand{\metricline}[3]{%
+  \begin{minipage}[t]{0.315\linewidth}
+    \labeltext{#1}\par
+    {\color{#2}\fontsize{16}{17}\selectfont\bfseries #3}
+  \end{minipage}
+}
+
+\begin{document}
+\enlargethispage{2\baselineskip}
+\fontsize{7.85}{8.85}\selectfont
+
+\begin{minipage}[t]{\linewidth}
+{\color{navy}\fontsize{22}{23}\selectfont\bfseries NUWA Evidence Sheet}\par
+{\color{ink}\normalsize Autonomous self-healing ecosystem for low Earth orbit satellite constellations}\par
+{\color{muted}\small Welcome to NUWA, the first complete, autonomous, self-healing ecosystem for satellite constellations. NUWA transforms a group of fragile, isolated spacecraft into a cooperative, resilient network.}
+\end{minipage}
+
+\vspace{4pt}
+{\color{blue}\rule{\linewidth}{0.7pt}}
+\vspace{1pt}
+
+\metricline{Primary technical KPI}{blue}{94.3\%}
+\hfill
+\metricline{Primary sustainability KPI}{green}{3,103 t}
+\hfill
+\metricline{Protocol test pass rate}{blue}{273/273}
+
+\vspace{-1pt}
+\begin{tabularx}{\linewidth}{@{}Y Y Y@{}}
+{\scriptsize RMSE improvement in IT-05 30-day drift: raw 8.909 to corrected 0.504.} &
+{\scriptsize CO$_2$-eq avoided per year in the 100-satellite reference model.} &
+{\scriptsize C++ tests pass across codec, frame pipeline, FSM, DEGR, simulation, and matrix tests.}
+\end{tabularx}
+
+\vspace{-1pt}
+\begin{tabularx}{\linewidth}{@{}Y@{\hspace{10pt}}Y@{}}
+\sectionhead{Problem Statement}
+Low Earth orbit is crowded, fragile, and time-critical. A sensor can drift, telemetry can become unreliable, and a satellite can lose confidence in its own data before ground teams are available. Recoverable faults then become early decommission decisions, adding replacement pressure, launch emissions, and long-term debris exposure. NUWA targets that gap: satellites are not always dead; sometimes they are only blind.
+&
+\sectionhead{Core Function}
+NUWA gives satellites neighbors. It runs on the edge as an autonomous self-healing ecosystem: Hankel-SVD anomaly detection catches sensor faults, then the SISP protocol coordinates correction, relay, and borrow services through fixed 64-byte frames and a deterministic 21-state/24-event C++ state machine. A degraded satellite can correct drift, relay vital data through a peer, or borrow a healthy neighbor sensor stream.
+\end{tabularx}
+
+\sectionhead{Baseline Case vs. Improved Case}
+\begin{tabularx}{\linewidth}{@{}>{\bfseries\raggedright\arraybackslash}p{0.14\linewidth}Y Y@{}}
+\toprule
+Impact area & Baseline case & Improved case with NUWA \\
+\midrule
+Sensor faults & Degraded satellites wait for ground intervention or onboard redundancy. & Neighbor-assisted correction preserves useful measurements during drift or failure. \\
+Data delivery & Missed ground contact delays payloads and increases mission latency. & Relay moves data through a better-positioned satellite when direct contact is unavailable. \\
+Energy use & Resilience often depends on extra hardware, repeated contacts, or delayed recovery cycles. & Full daily protocol overhead is about 317 mWh/day, or 0.26\% of a 5 W continuous budget. \\
+Satellite life cycle & Early sensor or subsystem degradation can shorten usable mission life. & Reference model assumes 45\% life extension, improving useful life from 3.0 to 4.35 years. \\
+Replacement pressure & Premature failure increases rebuild, launch, and operating cost. & Replacement launches fall from 33.3/yr to 23.0/yr in the 100-satellite model, about 31\% fewer. \\
+Debris over years & More frequent replacements increase mass sent to orbit and long-term debris risk. & About 10.3 future debris objects avoided per year; about 27,800 over 50 years under growth assumptions. \\
+Failure behavior & Fault messages can cause poor distributed logic to spread failure state. & Healthy nodes record failed peers without cascading into critical failure. \\
+\bottomrule
+\end{tabularx}
+
+\vspace{1pt}
+\begin{tabularx}{\linewidth}{@{}Y@{\hspace{10pt}}Y@{}}
+\sectionhead{Test Conditions}
+\begin{itemize}
+  \item IT-05: 30-day drift correction using Kalman filter.
+  \item IT-06: 7-day scenario with 10\% packet loss and 5 satellites.
+  \item OPS-SAT stream test: 4 channels mapped to LEO-IMG, LEO-COM, LEO-SCI, and LEO-OBS.
+  \item Relay resilience: checksum drop, out-of-order fragments, retry, and duplicate replay.
+  \item Dual-PHY: 437 MHz control at 9,600 bps and bulk at 19,200 bps.
+\end{itemize}
+&
+\sectionhead{Measured Evidence}
+\begin{itemize}
+  \item IT-05: RMSE reduced from 8.909 to 0.504, a 94.3\% improvement.
+  \item IT-06: RMSE reduced from 8.290 to 1.197, an 85.6\% improvement.
+  \item 1 MiB bulk relay completes in about 7.91 min at 1.65 Wh link energy.
+  \item Dual-PHY validation passed 8/8 assertions.
+  \item 8-neighbor correction round takes about 1.10 s and 3.66 J requester energy.
+\end{itemize}
+\end{tabularx}
+
+\vspace{-1pt}
+\begin{tabularx}{\linewidth}{@{}Y@{\hspace{10pt}}Y@{}}
+\sectionhead{Technical Basis}
+\begin{itemize}
+  \item Fixed 512-bit frame, CRC-8/MAXIM checksum, typed payloads, bounded state transitions.
+  \item DEGR trust weight: $w_i=\max(0.05,1-\mathrm{DEGR}_i/15)$.
+  \item Weighted average, weighted median, Kalman, and hybrid correction filters.
+  \item Hankel-SVD stream detector plus OPS-SAT static SVD study reaching up to 0.99 ROC-AUC.
+  \item 437 MHz link budget: 8.9 dB margin at 1000 km; about 2,790 km usable range.
+\end{itemize}
+&
+\sectionhead{Project Limitations}
+\begin{itemize}
+  \item Research-grade implementation, not yet flight-qualified software.
+  \item Sustainability outcomes are model estimates and must be tuned per mission.
+  \item RF performance depends on geometry, antennas, spectrum authorization, Doppler, and radio hardware.
+  \item Security hardening still needs authenticated frames and signed health beacons.
+  \item Deorbit coordination is conceptual; next step is COTS-radio hardware-in-the-loop testing.
+\end{itemize}
+\end{tabularx}
+
+\sectionhead{Primary SDG Alignment}
+\begin{tabularx}{\linewidth}{@{}Y Y Y@{}}
+{\scriptsize\textbf{SDG 9.} Self-healing satellite infrastructure; fault detection under 1 min and correction under 5 s.} &
+{\scriptsize\textbf{SDG 13.} Protects Earth-observation data integrity; telemetry validation above 99\% on nominal satellites.} &
+{\scriptsize\textbf{SDG 17.} Reliable space infrastructure for global development data; target above 90\% autonomous fault resolution.}
+\end{tabularx}
+
+\sectionhead{Scalability and Future Work}
+\begin{tabularx}{\linewidth}{@{}Y Y@{}}
+{\scriptsize\textbf{Scale capabilities:} shared computation; low-latency fault detection; multi-frequency state machine; encryption layer.} &
+{\scriptsize\textbf{Roadmap:} 2026 validation through multi-topology stress testing; 2027 scale through hardware-in-loop testing and inter-agency sharing protocol; 2028+ deployment and enhancements.}
+\end{tabularx}
+
+\sectionhead{Impact Summary}
+NUWA keeps degraded satellites useful, holds daily protocol energy to about 0.26\% of a 5 W budget, extends useful satellite life, and reduces long-term replacement, launch-mass, and debris pressure.
+
+{\scriptsize\color{muted}\textbf{Evidence base:} NUWA docs, SDG impact metrics, test summaries, KPI snapshot, signal/energy studies, and equation reference. Measured results are test-derived; sustainability results are scenario estimates.}
+
+\end{document}
