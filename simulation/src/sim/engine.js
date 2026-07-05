@@ -78,8 +78,8 @@ export class SimulationEngine {
     this._opsatCursors = {};
     this._opsatReady = false;
     this._loadOpsatData();
-    // Periodic heartbeat (external timer, per SISP protocol spec)
-    this.simClock.setInterval(30, () => {
+    // Periodic heartbeat every 5 sim-minutes (not 30s — was too spammy)
+    this.simClock.setInterval(300, () => {
       this.protocol.triggerHeartbeat();
     });
   }
@@ -185,28 +185,33 @@ export class SimulationEngine {
 
     // 2. GS_LOST → RELAY (once per dark pass), GS_VISIBLE → BORROW
     if (sat.currentPos) {
-      const hasLOS = this.groundStations.some((gs) => losToStation(sat.currentPos, gs));
-      const lostLOS = sat._hadLOS != null && sat._hadLOS && !hasLOS;
-      const gainedLOS = sat._hadLOS != null && !sat._hadLOS && hasLOS;
-      sat._hadLOS = hasLOS;
+      // First tick: seed _hadLOS without triggering
+      if (sat._hadLOS === null) {
+        sat._hadLOS = this.groundStations.some((gs) => losToStation(sat.currentPos, gs));
+      } else {
+        const hasLOS = this.groundStations.some((gs) => losToStation(sat.currentPos, gs));
+        const lostLOS = sat._hadLOS && !hasLOS;
+        const gainedLOS = !sat._hadLOS && hasLOS;
+        sat._hadLOS = hasLOS;
 
-      // GS_LOST → relay request (randomized to avoid perfect sync)
-      if (lostLOS && !sat._relayPending && Math.random() < 0.15) {
-        sat._relayPending = true;
-        this.protocol.triggerRelay(sat.id);
-        return;
+        // GS_LOST → relay (fire every LOS loss, no probability gate)
+        if (lostLOS && !sat._relayPending) {
+          sat._relayPending = true;
+          this.protocol.triggerRelay(sat.id);
+          return;
+        }
+        // GS_VISIBLE → borrow (fire every LOS gain)
+        if (gainedLOS) {
+          this.protocol.triggerBorrow(sat.id);
+          return;
+        }
+        // Reset relay flag when LOS is regained
+        if (hasLOS) sat._relayPending = false;
       }
-      // GS_VISIBLE → borrow request
-      if (gainedLOS && Math.random() < 0.1) {
-        this.protocol.triggerBorrow(sat.id);
-        return;
-      }
-      // Reset relay flag when we have LOS again
-      if (hasLOS) sat._relayPending = false;
     }
 
-    // 4. Random HEARTBEAT pulse from busy satellites
-    if (sat.role !== 'NAV_REFERENCE' && Math.random() < 0.003) {
+    // 4. Random HEARTBEAT pulse from busy satellites (rare, every ~330 ticks)
+    if (sat.role !== 'NAV_REFERENCE' && Math.random() < 0.001) {
       this.protocol.triggerHeartbeat(sat.id);
     }
   }
@@ -222,6 +227,7 @@ export class SimulationEngine {
       if (totalLen > 0) cursor.index = this._repeatIndex(cursor.index, totalLen);
       const result = tickOpsatSensor(sat, timeSec, cursor);
       if (!result) break;
+      if (result.value !== undefined) sat._lastTelemetryValue = result.value;
     }
   }
 
@@ -258,16 +264,13 @@ export class SimulationEngine {
         sat.energy -= 0.25;
       }
 
-      // 1% chance of sudden energy spike drain (solar panel misalignment / heater stuck on)
-      if (Math.random() < 0.01) {
-        const spikeLoss = 15 + Math.random() * 25; // 15–40% of remaining
-        sat.energy -= spikeLoss;
+      // 0.2% chance of energy spike (solar panel misalignment / heater stuck on)
+      if (Math.random() < 0.002) {
+        sat.energy -= 10 + Math.random() * 15; // 10–25% loss
       }
 
-      // 0.3% chance of random critical failure
-      if (Math.random() < 0.003) {
-        this.protocol.triggerFailure(sat.id);
-      }
+      // No random critical failure — only triggered by energy depletion
+      // (deterministic: run out of juice → fail)
 
       // Energy at zero → die
       if (sat.energy <= 0) {
@@ -283,6 +286,7 @@ export class SimulationEngine {
       sat.energy = 10;
       sat.state = 'IDLE';
       sat.activeScenario = null;
+      this.protocol.triggerHeartbeat(sat.id);  // announce recovery to neighbours
     }
   }
 }

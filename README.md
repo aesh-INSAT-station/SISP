@@ -2,7 +2,7 @@
 
 A cooperative, self-healing satellite protocol stack for CubeSat constellations.
 Satellites correct degraded sensors, relay data across visibility gaps, and borrow
-healthy sensors from neighbours — fully autonomously, with no ground intervention.
+healthy sensors from neighbours - fully autonomously, with no ground intervention.
 
 **273/273 C++ tests pass · 94.3% RMSE improvement (IT-05) · 12.5 kHz + 25 kHz dual-PHY**
 

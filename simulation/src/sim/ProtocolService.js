@@ -78,9 +78,17 @@ function payloadFor(service, sat) {
       return { degr: sat.degr, sensor: s?.type ?? 'UNKNOWN', orbit_err_m: Math.round(sat.orbit_error_m) };
     }
     case 'CORRECTION_RSP': {
-      // Simulated reading: neighbor reports its view of the target's state,
-      // with noise proportional to its own DEGR.
-      return { degr: sat.degr, k: sat.degr_k.toFixed(2), svd: sat.degr_svd.toFixed(2) };
+      // Responder reports its sensor reading (real OPS-SAT value if available)
+      const teleVal = sat._lastTelemetryValue;
+      const reading = teleVal != null
+        ? teleVal
+        : sat.orbit_error_m * (1 + (Math.random() - 0.5) * 0.1 * sat.degr);
+      return {
+        degr: sat.degr,
+        k: sat.degr_k,
+        svd: sat.degr_svd,
+        reading_x: Math.round(reading * 10) / 10,
+      };
     }
     case 'RELAY_REQ':        return { reason: 'ENERGY_LOW', energy_pct: Math.round(sat.energy) };
     case 'RELAY_ACCEPT':     return { capacity: 'OK', window_s: 12 };
@@ -90,7 +98,17 @@ function payloadFor(service, sat) {
     case 'BORROW_REQ':       return { want: 'OPTICAL_FRAME', priority: 1 };
     case 'BORROW_RSP': {
       const s = sensorOfType(sat, 'OPTICAL') || primarySensor(sat);
-      return { sensor: s?.type ?? 'UNKNOWN', frame_id: Math.floor(Math.random() * 9999) };
+      // Responder returns its actual telemetry reading (real value if available)
+      const teleVal = sat._lastTelemetryValue;
+      const reading = teleVal != null
+        ? teleVal
+        : sat.orbit_error_m * (1 + (Math.random() - 0.5) * 0.1);
+      return {
+        sensor: s?.type ?? 'UNKNOWN',
+        frame_id: Math.floor(Math.random() * 9999),
+        degr: sat.degr,
+        reading_x: Math.round(reading * 10) / 10,
+      };
     }
     case 'HEARTBEAT':        return { uptime_s: Math.floor(sat.uptime_s), energy_pct: Math.round(sat.energy) };
     case 'FAILURE': {
@@ -186,7 +204,7 @@ export class ProtocolService {
     return new Promise((resolve) => {
       this.sendPacket(fromSat, toSat, reqService, () => {
         this.simClock.scheduleAfter(processingSeconds, () => {
-          this.sendPacket(toSat, fromSat, rspService, () => resolve());
+          this.sendPacket(toSat, fromSat, rspService, (rspPkt) => resolve(rspPkt));
         });
       });
     });
@@ -207,12 +225,12 @@ export class ProtocolService {
 
     neighbors.forEach((n, idx) => {
       this.simClock.scheduleAfter(idx * 0.12, () => {
-        this.request(sat, n, 'CORRECTION_REQ', 'CORRECTION_RSP').then(() => {
-          // Simulated measurement: neighbor's view of the true value,
-          // corrupted by noise proportional to the neighbor's DEGR.
-          const noiseFactor = 0.1 + 0.05 * n.degr;
-          const measurement = trueVal * (1 + (Math.random() - 0.5) * noiseFactor);
-          readings.push({ value: measurement, weight: degrWeight(n.degr) });
+        this.request(sat, n, 'CORRECTION_REQ', 'CORRECTION_RSP').then((rspPkt) => {
+          // Extract sensor reading + weight from the responder's payload
+          const p = rspPkt?.payload ?? {};
+          const measurement = p.reading_x ?? trueVal;
+          const weight = degrWeight(p.degr ?? n.degr);
+          readings.push({ value: measurement, weight });
           received++;
           if (received === neighbors.length) {
             // Run the hybrid correction algorithm
@@ -241,12 +259,14 @@ export class ProtocolService {
     const neighbor = hub || this.engine.findNearest(sat, 1)[0];
     if (!neighbor) { this._endScenario(sat); return; }
     this.request(sat, neighbor, 'RELAY_REQ', 'RELAY_ACCEPT').then(() => {
-      sat.state = 'RELAY_ACTIVE';
+      sat.state = 'RELAY_SENDING';
       this.sendPacket(sat, neighbor, 'DOWNLINK_DATA', () => {
+        sat.state = 'RELAY_WAIT_ACK';
         this.sendPacket(neighbor, null, 'DOWNLINK_DATA', () => {
           this.simClock.scheduleAfter(0.2, () => {
             this.sendPacket(null, neighbor, 'DOWNLINK_ACK', () => {
               this.sendPacket(neighbor, sat, 'DOWNLINK_ACK', () => {
+                sat.state = 'RELAY_DONE';
                 sat.energy = Math.min(100, sat.energy + 20);
                 this._endScenario(sat);
               });
@@ -277,6 +297,8 @@ export class ProtocolService {
   triggerFailure(satId) {
     const sat = this.engine.getSat(satId);
     if (!sat || sat.state === 'CRITICAL_FAIL') return;
+    // Only one satellite may be failed at a time (state machine constraint)
+    if (this.engine.sats.some((s) => s.state === 'CRITICAL_FAIL')) return;
     sat.state = 'CRITICAL_FAIL'; sat.activeScenario = 'FAIL';
     this.activeScenarios++; this.failureCount++;
     this.engine.findNearest(sat, 3).forEach((other) => this.sendPacket(sat, other, 'FAILURE'));
@@ -297,8 +319,14 @@ export class ProtocolService {
       this.engine.sats.find((s) => s.id !== sat.id && s.role === 'OBSERVATION' && s.state === 'IDLE') ||
       this.engine.sats.find((s) => s.id !== sat.id && hasOpticalSensor(s)       && s.state === 'IDLE');
     if (!obs) return;
-    sat.state = 'BORROW_WAIT_RSP'; sat.activeScenario = 'BORROW'; this.activeScenarios++;
-    this.request(sat, obs, 'BORROW_REQ', 'BORROW_RSP').then(() => this._endScenario(sat));
+    sat.state = 'BORROW_WAIT_ACCEPT'; sat.activeScenario = 'BORROW'; this.activeScenarios++;
+    this.request(sat, obs, 'BORROW_REQ', 'BORROW_RSP').then(() => {
+      sat.state = 'BORROW_RECEIVING';
+      this.simClock.scheduleAfter(0.5, () => {
+        sat.state = 'BORROW_DONE';
+        this._endScenario(sat);
+      });
+    });
     this.simClock.scheduleAfter(7, () => { if (sat.activeScenario === 'BORROW') this._endScenario(sat); });
   }
 
