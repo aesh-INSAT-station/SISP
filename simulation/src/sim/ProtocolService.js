@@ -254,23 +254,18 @@ export class ProtocolService {
   triggerRelay(satId) {
     const sat = this.engine.getSat(satId);
     if (!sat || sat.state !== 'IDLE') return;
+    if (this.engine.sats.some((s) => s.state === 'CRITICAL_FAIL')) return;
     sat.state = 'RELAY_WAIT_ACCEPT'; sat.activeScenario = 'RELAY'; this.activeScenarios++;
     const hub      = this.engine.sats.find((s) => s.role === 'RELAY_HUB' && s.state === 'IDLE');
     const neighbor = hub || this.engine.findNearest(sat, 1)[0];
     if (!neighbor) { this._endScenario(sat); return; }
     this.request(sat, neighbor, 'RELAY_REQ', 'RELAY_ACCEPT').then(() => {
-      sat.state = 'RELAY_SENDING';
+      sat.state = 'RELAY_ACTIVE';
       this.sendPacket(sat, neighbor, 'DOWNLINK_DATA', () => {
-        sat.state = 'RELAY_WAIT_ACK';
-        this.sendPacket(neighbor, null, 'DOWNLINK_DATA', () => {
-          this.simClock.scheduleAfter(0.2, () => {
-            this.sendPacket(null, neighbor, 'DOWNLINK_ACK', () => {
-              this.sendPacket(neighbor, sat, 'DOWNLINK_ACK', () => {
-                sat.state = 'RELAY_DONE';
-                sat.energy = Math.min(100, sat.energy + 20);
-                this._endScenario(sat);
-              });
-            });
+        this.simClock.scheduleAfter(0.3, () => {
+          this.sendPacket(neighbor, sat, 'DOWNLINK_ACK', () => {
+            sat.energy = Math.min(100, sat.energy + 20);
+            this._endScenario(sat);
           });
         });
       });
@@ -314,18 +309,14 @@ export class ProtocolService {
   triggerBorrow(satId) {
     const sat = this.engine.getSat(satId);
     if (!sat || sat.state !== 'IDLE') return;
-    // Find a peer with an active OPTICAL sensor
+    if (this.engine.sats.some((s) => s.state === 'CRITICAL_FAIL')) return;
     const obs =
       this.engine.sats.find((s) => s.id !== sat.id && s.role === 'OBSERVATION' && s.state === 'IDLE') ||
       this.engine.sats.find((s) => s.id !== sat.id && hasOpticalSensor(s)       && s.state === 'IDLE');
     if (!obs) return;
-    sat.state = 'BORROW_WAIT_ACCEPT'; sat.activeScenario = 'BORROW'; this.activeScenarios++;
+    sat.state = 'BORROW_WAIT_RSP'; sat.activeScenario = 'BORROW'; this.activeScenarios++;
     this.request(sat, obs, 'BORROW_REQ', 'BORROW_RSP').then(() => {
-      sat.state = 'BORROW_RECEIVING';
-      this.simClock.scheduleAfter(0.5, () => {
-        sat.state = 'BORROW_DONE';
-        this._endScenario(sat);
-      });
+      this._endScenario(sat);
     });
     this.simClock.scheduleAfter(7, () => { if (sat.activeScenario === 'BORROW') this._endScenario(sat); });
   }

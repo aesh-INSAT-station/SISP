@@ -82,6 +82,11 @@ export class SimulationEngine {
     this.simClock.setInterval(300, () => {
       this.protocol.triggerHeartbeat();
     });
+    // One initial failure after 8 sim-seconds so the process is visible
+    this.simClock.scheduleAfter(8, () => {
+      const target = this.sats.find((s) => s.role === 'OBSERVATION') || this.sats[0];
+      this.protocol.triggerFailure(target.id);
+    });
   }
 
   _repeatIndex(index, length) {

@@ -10,12 +10,8 @@ export const STATE_COLOR_HEX = {
   CORR_WAIT_RSP:     0xf5c518,
   CORR_COMPUTING:    0xf5c518,
   RELAY_WAIT_ACCEPT: 0x22d3ee,
-  RELAY_SENDING:     0x22d3ee,
-  RELAY_WAIT_ACK:    0x22d3ee,
-  RELAY_DONE:        0x22d3ee,
-  BORROW_WAIT_ACCEPT: 0xa78bfa,
-  BORROW_RECEIVING:  0xa78bfa,
-  BORROW_DONE:       0xa78bfa,
+  RELAY_ACTIVE:      0x22d3ee,
+  BORROW_WAIT_RSP:   0xa78bfa,
   CRITICAL_FAIL:     0xff3d5a,
 };
 
@@ -24,12 +20,8 @@ export const STATE_COLOR_CSS = {
   CORR_WAIT_RSP:     '#f5c518',
   CORR_COMPUTING:    '#f5c518',
   RELAY_WAIT_ACCEPT: '#22d3ee',
-  RELAY_SENDING:     '#22d3ee',
-  RELAY_WAIT_ACK:    '#22d3ee',
-  RELAY_DONE:        '#22d3ee',
-  BORROW_WAIT_ACCEPT: '#a78bfa',
-  BORROW_RECEIVING:  '#a78bfa',
-  BORROW_DONE:       '#a78bfa',
+  RELAY_ACTIVE:      '#22d3ee',
+  BORROW_WAIT_RSP:   '#a78bfa',
   CRITICAL_FAIL:     '#ff3d5a',
 };
 

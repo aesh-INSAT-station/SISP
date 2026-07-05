@@ -15,10 +15,16 @@ const SERVER_SENSOR_HISTORY_MAX = 200;
 // Event values matching server/index.js and sisp_state_machine.hpp
 export const CPP_EVT = {
 	FAULT_DETECTED: 12,
+	TIMER_EXPIRED: 13,
 	ENERGY_LOW: 14,
+	GS_VISIBLE: 15,
+	GS_LOST: 16,
+	ALL_FRAGS_SENT: 17,
+	ALL_FRAGS_RCVD: 18,
+	SENSOR_READ_DONE: 19,
+	CORRECTION_DONE: 20,
 	CRITICAL_FAILURE: 21,
 	RESET: 22,
-	SENSOR_READ_DONE: 19,
 };
 
 // Maps C++ service names to the JS SERVICE_COLOR keys (for packet animation)
