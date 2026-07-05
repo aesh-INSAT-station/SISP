@@ -149,17 +149,11 @@ def coding_expansion(coding: str) -> float:
 
 
 def interference_penalty(ebn0_db: np.ndarray, jsr_db: float, mode: str = "in_band") -> np.ndarray:
-    """Apply interference penalty to Eb/N0.
-
-    In-band tone jammer at J/S ratio (dB):
-        Eb/N0_eff = Eb/N0 - 10·log10(1 + J/S_lin)
-
-    Adjacent-channel: add ACLR attenuation to the J/S ratio:
-        J_eff = J - ACLR  →  J/S_eff = J/S - ACLR
-
-    ALOHA collision proxy (optional): treated as an erasure channel,
-    collision_prob = 1 - exp(-G) for normalised offered load G.
-    """
+    if mode == "aloha":
+        g = jsr_db
+        collision_prob = 1.0 - np.exp(-g)
+        penalty_db = -10.0 * np.log10(np.clip(1.0 - collision_prob, 1e-10, 1.0))
+        return np.asarray(ebn0_db, dtype=float) - penalty_db
     jsr_lin = 10.0 ** (jsr_db / 10.0)
     penalty_db = 10.0 * np.log10(1.0 + jsr_lin)
     return np.asarray(ebn0_db, dtype=float) - penalty_db
@@ -837,22 +831,36 @@ with st.sidebar:
     doppler_margin = st.slider("Doppler guard margin (dB)", 0.0, 5.0, 1.5, 0.5)
 
     st.subheader("Interference")
-    st.caption("Tone jammer or adjacent-channel interferer. Reduces effective Eb/N0.")
+    st.caption("Tone jammer, adjacent-channel interferer, or ALOHA collision proxy.")
     enable_interference = st.checkbox("Enable interference model", value=False)
     jammer_type = st.selectbox("Jammer type", ["In-band tone", "Adjacent-channel", "ALOHA collision proxy"], index=0)
-    jsr_db = st.slider("J/S ratio (dB)", -20.0, 30.0, 6.0, 1.0, disabled=not enable_interference)
-    if jammer_type == "Adjacent-channel":
-        aclr_db = st.slider("ACLR (dB)", 10.0, 60.0, 30.0, 1.0, disabled=not enable_interference,
-                            help="Adjacent Channel Leakage Ratio — how much power leaks from the adjacent channel.")
-        jsr_eff_db = jsr_db - aclr_db
-    else:
+    jammer_type_mode = {"In-band tone": "in_band", "Adjacent-channel": "adjacent", "ALOHA collision proxy": "aloha"}[jammer_type]
+    if jammer_type == "ALOHA collision proxy":
+        offered_load_g = st.slider("Offered load G", 0.1, 10.0, 1.0, 0.1, disabled=not enable_interference,
+                                   help="Normalised offered load for slotted ALOHA: collision_prob = 1 - exp(-G)")
+        jsr_eff_db = offered_load_g
         aclr_db = 0.0
-        jsr_eff_db = jsr_db
-    st.caption(f"Effective J/S after filtering: {jsr_eff_db:.1f} dB" if enable_interference else "")
-    interference_db = jsr_eff_db if enable_interference else 0.0
-    if enable_interference and interference_db > 0:
-        penalty_db = 10.0 * np.log10(1.0 + 10.0 ** (interference_db / 10.0))
-        st.caption(f"→ Equivalent Eb/N0 penalty: {penalty_db:.1f} dB")
+    else:
+        jsr_db = st.slider("J/S ratio (dB)", -20.0, 30.0, 6.0, 1.0, disabled=not enable_interference)
+        if jammer_type == "Adjacent-channel":
+            aclr_db = st.slider("ACLR (dB)", 10.0, 60.0, 30.0, 1.0, disabled=not enable_interference,
+                                help="Adjacent Channel Leakage Ratio — how much power leaks from the adjacent channel.")
+            jsr_eff_db = jsr_db - aclr_db
+        else:
+            aclr_db = 0.0
+            jsr_eff_db = jsr_db
+    if enable_interference:
+        if jammer_type == "ALOHA collision proxy":
+            collision_prob = 1.0 - np.exp(-jsr_eff_db)
+            st.caption(f"Collision probability: {collision_prob:.3f}")
+            penalty_db = -10.0 * np.log10(np.clip(1.0 - collision_prob, 1e-10, 1.0))
+            st.caption(f"→ Equivalent Eb/N0 penalty: {penalty_db:.1f} dB (erasure model)")
+        else:
+            st.caption(f"Effective J/S after filtering: {jsr_eff_db:.1f} dB")
+            if jsr_eff_db > 0:
+                penalty_db = 10.0 * np.log10(1.0 + 10.0 ** (jsr_eff_db / 10.0))
+                st.caption(f"→ Equivalent Eb/N0 penalty: {penalty_db:.1f} dB")
+    interference_db = jsr_eff_db if enable_interference and jammer_type != "ALOHA collision proxy" else 0.0
 
     st.subheader("Modem")
     modulation_label = st.selectbox("Modulation", list(modulations.keys()), index=0)
@@ -1100,7 +1108,7 @@ with tab_phy:
         ax1.semilogy(ebn0_range, ber_conv, label="Conv")
         ax1.semilogy(ebn0_range, ber_rs, label="Conv+RS")
         if enable_interference:
-            ebn0_jammed = interference_penalty(ebn0_range, jsr_eff_db)
+            ebn0_jammed = interference_penalty(ebn0_range, jsr_eff_db, mode=jammer_type_mode)
             ber_jam = ber_post_decoding(ebn0_jammed, modulation=modulation, coding="CONV_RS")
             ax1.semilogy(ebn0_range, ber_jam, "--", color="#ff4466", lw=1.5,
                         label=f"Conv+RS + jammer (J/S={jsr_eff_db:.0f} dB)")
@@ -1139,7 +1147,7 @@ with tab_phy:
         fig2, ax2 = plt.subplots(figsize=(6, 4))
         ax2.semilogy(d_km, per, label="No interference")
         if enable_interference:
-            ebn0_jammed = interference_penalty(ebn0, jsr_eff_db)
+            ebn0_jammed = interference_penalty(ebn0, jsr_eff_db, mode=jammer_type_mode)
             ber_jam = ber_post_decoding(ebn0_jammed, modulation=modulation, coding=coding)
             per_jam = per_from_ber(ber_jam, FRAME_BITS)
             per_jam = np.clip(per_jam, 1e-12, 1.0)
@@ -1734,7 +1742,7 @@ with tab_robust:
         jsr_eff = sc["jsr_db"]
         if sc["aclr_db"] is not None:
             jsr_eff = sc["jsr_db"] - sc["aclr_db"]
-        ebn0_jammed = interference_penalty(ebn0_range_plot, jsr_eff)
+        ebn0_jammed = interference_penalty(ebn0_range_plot, jsr_eff, mode=sc["type"])
         ber_jam = ber_post_decoding(ebn0_jammed, modulation=modulation, coding=coding)
         ax_rob.semilogy(
             ebn0_range_plot,

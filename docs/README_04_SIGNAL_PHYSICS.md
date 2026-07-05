@@ -138,21 +138,22 @@ This fits comfortably within the 12.5 kHz control channel. A guard margin of **1
 
 ### Reference Link Budget (1000 km, 437 MHz, GMSK Conv+RS)
 
-| Parameter | Value |
-|---|---|
-| Tx power | 30 dBm (1 W) |
-| Tx gain | 2 dBi (omnidirectional) |
-| Rx gain | 2 dBi |
-| Path loss | 145.3 dB |
-| Pointing loss | 0 dB (omnidirectional) |
-| Misc loss | 3 dB |
-| Doppler margin | 1.5 dB |
-| Noise (12.5 kHz, 727 K) | −129.0 dBm |
-| **SNR** | **30 + 2 + 2 − 145.3 − 3 − 1.5 + 129.0 = +13.2 dB** |
-| B/Rb ratio (GMSK) | +1.15 dB |
-| **Eb/N0** | **+14.4 dB** |
-| Required Eb/N0 (PER<1%) | ~5.5 dB (GMSK Conv+RS) |
-| **Link margin** | **~8.9 dB** |
+#### Step-by-step calculation
+
+| # | Quantity | Formula | Value | Unit |
+|---|----------|---------|-------|------|
+| 1 | Free-space path loss | \(20\log_{10}(4\pi d f / c)\) | 145.25 | dB |
+| 2 | Receiver noise factor | \(F = 10^{\text{NF}/10},\; \text{NF}=5\) | 3.162 | — |
+| 3 | Receiver noise temp | \(T_{\text{rx}} = T_0(F-1),\; T_0=290\) K | 627.1 | K |
+| 4 | System noise temp | \(T_{\text{sys}} = T_{\text{ant}} + T_{\text{rx}},\; T_{\text{ant}}=100\) K | 727.1 | K |
+| 5 | Noise power | \(N = k T_{\text{sys}} B,\; B=12\,500\) Hz | −129.0 | dBm |
+| 6 | Received power | \(P_{\text{rx}} = P_{\text{tx}} + G_t + G_r - L_{\text{FS}} - L_{\text{misc}} - L_{\text{Doppler}}\) | −115.75 | dBm |
+| 7 | **SNR** | \(P_{\text{rx}} - N_{\text{dBm}}\) | **+13.25** | dB |
+| 8 | Bandwidth-to-rate ratio | \(10\log_{10}(B / R_b),\; R_b=9\,600\) bps | +1.15 | dB |
+| 9 | **\(E_b/N_0\)** | SNR + ratio | **+14.40** | dB |
+| 10 | Required \(E_b/N_0\) (GMSK Conv+RS, PER < 1 %) | BPSK baseline 3.8 dB + GMSK penalty 1.67 dB | ~5.5 | dB |
+| 11 | **Link margin** | \(14.40 - 5.5\) | **8.9** | dB |
+| 12 | Max range (margin→0) | \(1000 \times 10^{8.9/20}\) | ~2 790 | km |
 
 ---
 
