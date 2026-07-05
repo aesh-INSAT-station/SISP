@@ -3,7 +3,12 @@ $ErrorActionPreference = "Stop"
 $Root = Resolve-Path "$PSScriptRoot\.."
 $CppRoot = Join-Path $Root "c++ implemnetation"
 $BuildDir = Join-Path $CppRoot "build"
-$NinjaDir = Join-Path $CppRoot "build_ninja"
+$PrebuiltRunner = Join-Path $BuildDir "Release\test_runner.exe"
+
+if (Test-Path $PrebuiltRunner) {
+    & $PrebuiltRunner
+    exit $LASTEXITCODE
+}
 
 if (Test-Path (Join-Path $BuildDir "CMakeCache.txt")) {
     Set-Location $BuildDir
@@ -14,6 +19,7 @@ if (Test-Path (Join-Path $BuildDir "CMakeCache.txt")) {
 
 if (Get-Command g++.exe -ErrorAction SilentlyContinue) {
     Set-Location $CppRoot
+    $ManualRunner = Join-Path ([System.IO.Path]::GetTempPath()) "sisp_test_runner_manual.exe"
     g++.exe -std=c++17 -O2 -Wall -Wextra -Iinclude `
         tests/test_encode_decode.cpp `
         tests/test_payload_codec.cpp `
@@ -30,16 +36,9 @@ if (Get-Command g++.exe -ErrorAction SilentlyContinue) {
         src/sisp_degr.cpp `
         src/sisp_correction.cpp `
         src/sim_hooks.cpp `
-        -o test_runner_manual.exe
+        -o $ManualRunner
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    .\test_runner_manual.exe
-    exit $LASTEXITCODE
-}
-
-if (Test-Path (Join-Path $NinjaDir "CMakeCache.txt")) {
-    Set-Location $NinjaDir
-    cmake --build .
-    .\test_runner.exe
+    & $ManualRunner
     exit $LASTEXITCODE
 }
 

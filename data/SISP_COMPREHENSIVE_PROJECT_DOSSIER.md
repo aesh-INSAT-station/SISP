@@ -579,7 +579,7 @@ For N=8 neighbours, Conv+RS, 12.5 kHz control:
 | Network total | About 12.2 J per correction event |
 | 24 events/day | About 293 J / 0.081 Wh |
 
-Accuracy note: `SISP_KPI_SNAPSHOT.md` also presents a 6-neighbour correction-energy case with `3.90 J`, `26.0 mWh/day`, and `0.022%`. That snapshot contains an arithmetic/formula conflict under the stated power and frame-time assumptions, so this dossier does not reuse `3.90 J` as an authoritative energy result without recalculation.
+Accuracy note: `docs/SISP_KPI_SNAPSHOT.md` also presents a 6-neighbour correction-energy case with `3.90 J`, `26.0 mWh/day`, and `0.022%`. That snapshot contains an arithmetic/formula conflict under the stated power and frame-time assumptions, so this dossier does not reuse `3.90 J` as an authoritative energy result without recalculation.
 
 ### Bulk Relay / Borrow Energy
 

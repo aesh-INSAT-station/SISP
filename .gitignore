@@ -21,8 +21,14 @@ logs/
 
 # C++ build output (except the prebuilt DLL and test runner)
 c++ implemnetation/build/
+!c++ implemnetation/build/
+!c++ implemnetation/build/bin/
+!c++ implemnetation/build/bin/Release/
 !c++ implemnetation/build/bin/Release/sisp.dll
+!c++ implemnetation/build/Release/
 !c++ implemnetation/build/Release/test_runner.exe
+c++ implemnetation/build_cmake_tools/
+c++ implemnetation/build_ninja/
 
 # IDE / OS
 .vscode/settings.json
